@@ -29,6 +29,10 @@ jobs:
         run: cargo check --manifest-path src-tauri/Cargo.toml
       - name: Build Windows installers
         run: npm run tauri build
+      - name: Smoke-test NSIS current-user installation and uninstall
+        shell: pwsh
+        timeout-minutes: 5
+        run: ./.github/scripts/test-nsis.ps1
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v4
         with:
