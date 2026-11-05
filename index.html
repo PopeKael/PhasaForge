@@ -75,6 +75,9 @@
 
         <section class="tab-content settings-view" id="settings-view" hidden>
           <h2>Settings</h2>
+          <label class="setting-row">Shortcut modifier<select id="hotkey-modifier"><option value="right_ctrl">Right Ctrl</option><option value="left_ctrl">Left Ctrl</option><option value="right_alt">Right Alt</option><option value="left_alt">Left Alt</option></select></label>
+          <label class="setting-row">Shortcut key<select id="hotkey-key"><option value="up">Up Arrow</option><option value="down">Down Arrow</option><option value="space">Space</option></select></label>
+          <p class="muted" id="hotkey-status">The shortcut listens only for the selected modifier and key, passes keystrokes through, and stores no other keyboard input.</p>
           <label class="setting-row">Thai voice<select id="voice-select"><option value="">No Thai voice detected</option></select></label>
           <p class="muted">This app uses an installed Windows Thai speech voice when the WebView exposes one. It never substitutes an English voice.</p>
           <label class="setting-row">Thai playback speed<input id="settings-speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /></label>
@@ -84,7 +87,7 @@
           <div class="setting-actions"><button id="save-settings" class="primary-button">Save Settings</button><span id="settings-saved" class="muted"></span></div>
         </section>
       </main>
-      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd>Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Text capture is not configured yet</span><span class="version">v0.1.0</span></footer>
+      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Text capture is not configured yet</span><span class="version">v0.1.0</span></footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

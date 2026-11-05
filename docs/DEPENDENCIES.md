@@ -5,8 +5,7 @@
 | Package | Purpose | Licence / review |
 |---|---|---|
 | Tauri 2 (`tauri`, `tauri-build`) | Rust desktop host and Windows bundling | Tauri ecosystem licensing; verify the resolved crate notices before release. |
-| `tauri-plugin-global-shortcut` | Global Ctrl+Up activation | Tauri plugin; plugin workspace is MIT/Apache-2.0. It does not distinguish right from left Ctrl through this configuration. |
-| `tauri-plugin-store` | Available for future native settings migration | Tauri plugin; not currently used by the UI. |
+| `windows-sys` | Narrow Windows low-level keyboard hook and tray/window APIs | Microsoft Windows bindings; verify the resolved crate notice before release. The hook checks only the selected modifier/key and calls the next hook without suppressing input. |
 | Vite, TypeScript, `@tauri-apps/api` | Local frontend build and IPC | Verify exact resolved notices with the lockfiles before release. |
 
 ## Candidate projects reviewed

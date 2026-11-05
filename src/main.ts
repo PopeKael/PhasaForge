@@ -13,8 +13,8 @@ let mediaRecorder: MediaRecorder | undefined;
 let recordedChunks: Blob[] = [];
 let stream: MediaStream | undefined;
 
-type Settings = { speed: number; voice: string; modelFolder: string; meaning: string };
-const defaults: Settings = { speed: 0.75, voice: "", modelFolder: "", meaning: "" };
+type Settings = { speed: number; voice: string; modelFolder: string; meaning: string; hotkeyModifier: string; hotkeyKey: string };
+const defaults: Settings = { speed: 0.75, voice: "", modelFolder: "", meaning: "", hotkeyModifier: "right_ctrl", hotkeyKey: "up" };
 const loadSettings = (): Settings => {
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(settingsKey) ?? "{}") }; }
   catch { return defaults; }
@@ -37,6 +37,12 @@ function renderPassage(): void {
   $("meaning-line").textContent = settings.meaning ? `Meaning: ${settings.meaning}` : "Meaning: no translation supplied.";
   renderCharacters(current);
   localStorage.setItem(selectedKey, source.value);
+}
+
+function renderShortcut(): void {
+  const modifiers: Record<string, string> = { right_ctrl: "Right Ctrl", left_ctrl: "Left Ctrl", right_alt: "Right Alt", left_alt: "Left Alt" };
+  const keys: Record<string, string> = { up: "↑", down: "↓", space: "Space" };
+  $("shortcut-label").textContent = `${modifiers[settings.hotkeyModifier] ?? "Right Ctrl"} + ${keys[settings.hotkeyKey] ?? "↑"}`;
 }
 
 function describeCharacter(char: string): string {
@@ -119,6 +125,9 @@ $<HTMLInputElement>("settings-speed").value = String(settings.speed);
 $<HTMLOutputElement>("speed-output").value = `${Number(settings.speed).toFixed(2).replace(/0$/, "")}×`;
 $<HTMLTextAreaElement>("meaning-note").value = settings.meaning;
 $<HTMLInputElement>("model-folder").value = settings.modelFolder;
+$<HTMLSelectElement>("hotkey-modifier").value = settings.hotkeyModifier;
+$<HTMLSelectElement>("hotkey-key").value = settings.hotkeyKey;
+renderShortcut();
 renderPassage();
 updateVoiceOptions();
 window.speechSynthesis?.addEventListener("voiceschanged", updateVoiceOptions);
@@ -138,11 +147,20 @@ $("next").addEventListener("click", () => { sentenceIndex = Math.min(sentences.l
 document.querySelectorAll<HTMLButtonElement>(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab ?? "characters")));
 $("settings-toggle").addEventListener("click", () => { $("settings-view").hidden = !$("settings-view").hidden; });
 $("save-meaning").addEventListener("click", () => { settings.meaning = $<HTMLTextAreaElement>("meaning-note").value; localStorage.setItem(settingsKey, JSON.stringify(settings)); renderPassage(); });
-$("save-settings").addEventListener("click", () => {
+$("save-settings").addEventListener("click", async () => {
   settings.voice = $<HTMLSelectElement>("voice-select").value;
   settings.modelFolder = $<HTMLInputElement>("model-folder").value.trim();
+  settings.hotkeyModifier = $<HTMLSelectElement>("hotkey-modifier").value;
+  settings.hotkeyKey = $<HTMLSelectElement>("hotkey-key").value;
   settings.speed = Number(speed.value);
   localStorage.setItem(settingsKey, JSON.stringify(settings));
+  renderShortcut();
+  try {
+    await invoke("set_hotkey", { modifier: settings.hotkeyModifier, key: settings.hotkeyKey });
+    $("hotkey-status").textContent = "Shortcut saved and active.";
+  } catch (error) {
+    $("hotkey-status").textContent = `Preference saved; shortcut listener is unavailable: ${String(error)}`;
+  }
   $("settings-saved").textContent = "Saved on this device.";
   setTimeout(() => { $("settings-saved").textContent = ""; }, 2000);
 });
@@ -169,6 +187,11 @@ $("stop-record").addEventListener("click", () => { if (mediaRecorder?.state === 
 
 if ("__TAURI_INTERNALS__" in window) {
   const appWindow = getCurrentWindow();
+  invoke("set_hotkey", { modifier: settings.hotkeyModifier, key: settings.hotkeyKey }).then(() => {
+    $("hotkey-status").textContent = "Shortcut is active. It passes the keystrokes through and stores no other keyboard input.";
+  }).catch(error => {
+    $("hotkey-status").textContent = `Shortcut unavailable; open Settings to retry. ${String(error)}`;
+  });
   $("minimize").addEventListener("click", () => appWindow.minimize());
   $("close").addEventListener("click", async () => { try { await invoke("hide_main_window"); } catch { await appWindow.hide(); } });
 }

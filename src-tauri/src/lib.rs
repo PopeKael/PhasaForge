@@ -1,31 +1,27 @@
-use tauri::{menu::{Menu, MenuItem}, tray::TrayIconBuilder, Manager, WindowEvent};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+    Manager, RunEvent, WindowEvent,
+};
+
+mod hotkey;
 
 #[tauri::command]
 fn hide_main_window(window: tauri::Window) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
 }
 
-pub fn run() {
-    let shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::ArrowUp);
-    tauri::Builder::default()
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state == ShortcutState::Pressed {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                })
-                .build(),
-        )
-        .setup(move |app| {
-            if let Err(error) = app.global_shortcut().register(shortcut) {
-                eprintln!("Could not register Ctrl+Up; the app will remain available from its tray: {error}");
-            }
+#[tauri::command]
+fn set_hotkey(modifier: String, key: String) -> Result<(), String> {
+    hotkey::configure(&modifier, &key)
+}
 
+pub fn run() {
+    let app = tauri::Builder::default()
+        .setup(|app| {
+            if let Err(error) = hotkey::start(app.handle().clone()) {
+                eprintln!("Could not install the Right Ctrl + Up listener; PhasaForge remains available from its tray: {error}");
+            }
             let open = MenuItem::with_id(app, "open", "Open PhasaForge", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
@@ -54,7 +50,12 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![hide_main_window])
-        .run(tauri::generate_context!())
+        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey])
+        .build(tauri::generate_context!())
         .expect("PhasaForge failed to start");
+    app.run(|_, event| {
+        if matches!(event, RunEvent::Exit) {
+            hotkey::stop();
+        }
+    });
 }

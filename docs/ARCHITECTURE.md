@@ -2,7 +2,7 @@
 
 ## Current shape
 
-- **Rust host:** Tauri 2 owns the Windows app process, tray icon, global-shortcut registration and native window lifecycle.
+- **Rust host:** Tauri 2 owns the Windows app process, tray icon and native window lifecycle. A dedicated `WH_KEYBOARD_LL` hook checks only the configured modifier/key pair; it does not block input or retain other keystrokes.
 - **Frontend:** Vite plus TypeScript and plain DOM/CSS. No frontend framework or remote runtime dependency. Windows system fonts are used.
 - **Persistence:** UI preferences and the user's meaning note use browser local storage in the app origin. No account or remote service is used.
 - **Speech:** `SpeechSynthesis` is asked only for an installed `th-*` voice. Microphone practice currently captures a local audio blob for the session and clearly reports that recognition is not implemented.
@@ -14,4 +14,4 @@ Define provider traits/modules before adding translation or ASR. Keep OS capture
 
 ## Idle and privacy invariants
 
-At idle, the process may own its tray and registered shortcut, but it must not poll the clipboard, hold microphone access, or retain an ASR model. No source passage or audio is sent to a server in this build. Avoid logging selected user text.
+At idle, the process may own its tray and a narrow keyboard hook that checks only the configured shortcut, but it must not poll the clipboard, hold microphone access, or retain an ASR model. No source passage or audio is sent to a server in this build. Avoid logging selected user text or other keyboard input.
