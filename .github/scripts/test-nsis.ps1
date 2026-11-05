@@ -28,7 +28,12 @@ Write-Host "Registered app: $($entry.DisplayName)"
 if ($entry.PSObject.Properties['InstallLocation']) { Write-Host "InstallLocation: $($entry.InstallLocation)" } else { Write-Host 'InstallLocation: (not recorded)' }
 
 $locations = @()
-if ($entry.PSObject.Properties['InstallLocation'] -and $entry.InstallLocation) { $locations += $entry.InstallLocation }
+if ($entry.PSObject.Properties['InstallLocation'] -and $entry.InstallLocation) {
+  # NSIS writes InstallLocation as a quoted string in this app's uninstall
+  # registration. Remove wrapping quotes before passing it to Join-Path.
+  $registeredLocation = ([string]$entry.InstallLocation).Trim().Trim('"')
+  if ($registeredLocation) { $locations += $registeredLocation }
+}
 $locations += (Join-Path $env:LOCALAPPDATA 'PhasaForge')
 $installedExe = $null
 foreach ($dir in $locations) {

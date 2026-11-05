@@ -16,7 +16,7 @@ Status at 0.1.1. A passed item names the evidence actually obtained; partial or 
 | Recording and replay | Implemented, not live-verified | Browser MediaRecorder flow and resource cleanup are implemented; microphone permission, a live recording, replay, and re-record were not exercised. No ASR or scoring is claimed. |
 | Physical hotkey and external selection capture | Partially verified | Hook logic and UIA/clipboard paths compile; unit checks cover modifier mapping. A physical Right Ctrl+Up press against another app, real selection capture, clipboard format restoration, and actual popup repositioning were not verified in this session. Injected desktop keys are not equivalent to a physical key test. |
 | Monitor edges, DPI, and drag resize | Partial | Pure placement tests cover work-area edges including negative coordinates. Live multi-monitor/DPI placement and user drag movement/resizing were not verified. |
-| Installer install/uninstall | Not verified | NSIS packaging succeeded; this session did not run an installation cycle. |
-| Repository checkpoint | Pending | Record the commit and remote tip after the source changes are committed and pushed. |
+| Installer install/uninstall | Partial | GitHub Actions built NSIS and installed it successfully for the current user, but the smoke script failed while joining the registered install path because the registry value was quoted. The script now normalizes those quotes; the uninstall check awaits a run with this fix. |
+| Repository checkpoint | Passed | Source changes are committed on `main` and pushed to the private `origin`; remote tip was verified against the local commit. |
 
 This is a tested build candidate, not a claim that every desktop integration has passed on this machine. The remaining checks above require real Windows interaction or an installed Thai speech voice.
