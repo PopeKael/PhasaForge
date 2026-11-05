@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#062b30" />
+    <title>PhasaForge</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="titlebar" data-tauri-drag-region>
+        <img src="/assets/phasa-forge-master.png" alt="" class="brand-icon" />
+        <strong data-tauri-drag-region>PhasaForge</strong>
+        <div class="window-actions">
+          <button id="settings-toggle" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
+          <button id="minimize" class="icon-button" title="Minimize" aria-label="Minimize">—</button>
+          <button id="close" class="icon-button" title="Close to tray" aria-label="Close to tray">×</button>
+        </div>
+      </header>
+
+      <main>
+        <section class="source-row">
+          <div class="source-panel">
+            <label class="section-label" for="source-text">Selected Text</label>
+            <textarea id="source-text" spellcheck="false" lang="th" placeholder="Select Thai text in another app and use the shortcut, or paste it here…"></textarea>
+          </div>
+          <div class="audio-panel">
+            <div class="play-row">
+              <button id="play-selection" class="primary-button">▶ <span>Play</span></button>
+              <button id="play-current" class="secondary-button">▶| <span>Play Current<br />Sentence</span></button>
+            </div>
+            <div class="speed-head"><span>Thai Speech Speed</span><output id="speed-output">0.75×</output></div>
+            <div class="speed-row"><span>Slow</span><input id="speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /><span>Fast</span></div>
+            <div class="audio-note" id="voice-note">Checking for an installed Thai voice…</div>
+          </div>
+        </section>
+
+        <section class="focus-panel">
+          <div class="focus-head">
+            <strong>Current Sentence</strong><span id="sentence-position">(Sentence 0 of 0)</span>
+            <div class="passage-nav"><button id="previous" aria-label="Previous sentence">‹</button><span id="passage-count">0 of 0</span><button id="next" aria-label="Next sentence">›</button></div>
+          </div>
+          <div class="thai-focus" id="thai-focus">Paste a Thai passage to begin.</div>
+          <div class="romanization" id="romanization">Romanisation is not generated yet.</div>
+          <div class="meaning-line" id="meaning-line">Meaning: add a translation when one is available.</div>
+        </section>
+
+        <nav class="tabs" aria-label="Learning views">
+          <button data-tab="meaning" class="tab">Meaning</button>
+          <button data-tab="characters" class="tab active">Characters</button>
+          <button data-tab="practice" class="tab">Practice</button>
+        </nav>
+
+        <section class="tab-content" id="meaning-view" hidden>
+          <h2>Meaning</h2>
+          <p class="muted">A translation provider has not been configured. PhasaForge will not invent a meaning. Add your own note below, or connect an offline translation provider in a later build.</p>
+          <textarea id="meaning-note" placeholder="Your meaning or notes for this passage…"></textarea>
+          <button id="save-meaning" class="secondary-button small">Save note</button>
+        </section>
+
+        <section class="tab-content characters-view" id="characters-view">
+          <div id="character-chips" class="character-chips"><span class="muted">Thai characters will appear here.</span></div>
+          <div class="character-card">
+            <div class="character-large" id="character-large">ภ</div>
+            <div class="character-details" id="character-details"><strong>Written component</strong><p>Select a component above to see its Unicode character and a conservative script-level description.</p></div>
+          </div>
+        </section>
+
+        <section class="tab-content practice-view" id="practice-view" hidden>
+          <div class="practice-actions"><button id="record" class="primary-button">● <span>Record</span></button><button id="stop-record" class="secondary-button" disabled>■ <span>Stop</span></button></div>
+          <div id="practice-status" role="status">Practice recording and local speech recognition are not configured in this build.</div>
+          <div class="heard-label">What the recogniser heard</div><div id="heard-text" class="heard-text">—</div>
+          <p class="muted small-copy">Speech recognition feedback is not pronunciation grading. A transcription match alone cannot verify tones or pronunciation.</p>
+        </section>
+
+        <section class="tab-content settings-view" id="settings-view" hidden>
+          <h2>Settings</h2>
+          <label class="setting-row">Thai voice<select id="voice-select"><option value="">No Thai voice detected</option></select></label>
+          <p class="muted">This app uses an installed Windows Thai speech voice when the WebView exposes one. It never substitutes an English voice.</p>
+          <label class="setting-row">Thai playback speed<input id="settings-speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /></label>
+          <label class="setting-row">Speech model folder<input id="model-folder" type="text" placeholder="Not configured" /></label>
+          <p class="muted">Local recognition and model memory admission are not implemented yet.</p>
+          <label class="setting-row check-row"><input id="launch-login" type="checkbox" disabled /> Launch at Windows sign-in (not implemented)</label>
+          <div class="setting-actions"><button id="save-settings" class="primary-button">Save Settings</button><span id="settings-saved" class="muted"></span></div>
+        </section>
+      </main>
+      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd>Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Text capture is not configured yet</span><span class="version">v0.1.0</span></footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

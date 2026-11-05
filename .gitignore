@@ -1,0 +1,12 @@
+node_modules/
+.cargo-home/
+dist/
+src-tauri/target/
+src-tauri/gen/
+*.log
+*.local
+*.key
+*.sig
+.env
+.env.*
+release-artifacts/
