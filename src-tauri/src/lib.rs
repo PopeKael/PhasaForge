@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod hotkey;
+mod selection;
 
 #[tauri::command]
 fn hide_main_window(window: tauri::Window) -> Result<(), String> {

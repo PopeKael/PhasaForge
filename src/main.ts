@@ -1,5 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -187,6 +188,11 @@ $("stop-record").addEventListener("click", () => { if (mediaRecorder?.state === 
 
 if ("__TAURI_INTERNALS__" in window) {
   const appWindow = getCurrentWindow();
+  void listen<string>("selection-captured", event => {
+    source.value = event.payload;
+    sentenceIndex = 0;
+    renderPassage();
+  });
   invoke("set_hotkey", { modifier: settings.hotkeyModifier, key: settings.hotkeyKey }).then(() => {
     $("hotkey-status").textContent = "Shortcut is active. It passes the keystrokes through and stores no other keyboard input.";
   }).catch(error => {

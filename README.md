@@ -10,6 +10,7 @@
 |---|---|
 | Windows desktop shell, compact popup, tray menu | Implemented; direct launch verified on this PC |
 | Right/left modifier shortcut settings | Dedicated Windows low-level hook and settings controls implemented; physical key activation still needs verification |
+| Selected-text capture | Windows UI Automation selection path implemented; controls without a text-selection provider still need clipboard fallback |
 | Manual Thai text entry and passage navigation | Implemented |
 | Thai voice playback | Uses an installed Thai voice exposed by Windows WebView; not yet verified on this PC |
 | Character/grapheme inspection | Basic Unicode grapheme selection and cautious script labels; not linguistic analysis |
@@ -36,7 +37,7 @@ Build the Windows installer:
 npm run tauri build
 ```
 
-The app uses the system's installed Thai speech voice when available. If none is found, speech playback stays unavailable instead of substituting English. The current build listens for the configured modifier/key pair using a low-level Windows keyboard hook, defaults to Right Ctrl + Up, and passes all key events through. The earlier generic Ctrl+Up registration failed and has been removed. Selected-text capture is not wired yet.
+The app uses the system's installed Thai speech voice when available. If none is found, speech playback stays unavailable instead of substituting English. The current build listens for the configured modifier/key pair using a low-level Windows keyboard hook, defaults to Right Ctrl + Up, and passes all key events through. The earlier generic Ctrl+Up registration failed and has been removed. A selected passage is read through Windows UI Automation before the popup takes focus; clipboard fallback is not implemented yet.
 
 ## Help and Community
 

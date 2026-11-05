@@ -1,9 +1,10 @@
+use crate::selection;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Sender, SyncSender};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use windows_sys::Win32::Foundation::{GetLastError, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
@@ -33,7 +34,7 @@ static LEFT_ALT_DOWN: AtomicBool = AtomicBool::new(false);
 static TRIGGER_DOWN: AtomicBool = AtomicBool::new(false);
 static HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
-static TRIGGER_SENDER: OnceLock<Sender<()>> = OnceLock::new();
+static TRIGGER_SENDER: OnceLock<Sender<SyncSender<()>>> = OnceLock::new();
 
 fn modifier_code(value: &str) -> Option<u32> {
     match value {
@@ -72,7 +73,7 @@ pub fn configure(modifier: &str, key: &str) -> Result<(), String> {
 }
 
 pub fn start(app: AppHandle) -> Result<(), String> {
-    let (trigger_tx, trigger_rx) = mpsc::channel::<()>();
+    let (trigger_tx, trigger_rx) = mpsc::channel::<SyncSender<()>>();
     TRIGGER_SENDER
         .set(trigger_tx)
         .map_err(|_| "The hotkey listener is already initialized".to_string())?;
@@ -80,11 +81,16 @@ pub fn start(app: AppHandle) -> Result<(), String> {
     thread::Builder::new()
         .name("PhasaForge hotkey actions".to_string())
         .spawn(move || {
-            while trigger_rx.recv().is_ok() {
+            while let Ok(acknowledge) = trigger_rx.recv() {
+                let captured = selection::selected_text();
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
+                    if let Some(text) = captured {
+                        let _ = window.emit("selection-captured", text);
+                    }
                 }
+                let _ = acknowledge.send(());
             }
         })
         .map_err(|error| error.to_string())?;
@@ -174,7 +180,12 @@ unsafe extern "system" fn low_level_keyboard_proc(
                         && configured_modifier_is_down()
                     {
                         if let Some(sender) = TRIGGER_SENDER.get() {
-                            let _ = sender.send(());
+                            let (acknowledge, acknowledged) = mpsc::sync_channel(1);
+                            if sender.send(acknowledge).is_ok() {
+                                // Give UI Automation a brief head start before the trigger
+                                // reaches the foreground app and can collapse its selection.
+                                let _ = acknowledged.recv_timeout(Duration::from_millis(100));
+                            }
                         }
                     }
                 }

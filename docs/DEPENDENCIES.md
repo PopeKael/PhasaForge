@@ -6,6 +6,7 @@
 |---|---|---|
 | Tauri 2 (`tauri`, `tauri-build`) | Rust desktop host and Windows bundling | Tauri ecosystem licensing; verify the resolved crate notices before release. |
 | `windows-sys` | Narrow Windows low-level keyboard hook and tray/window APIs | Microsoft Windows bindings; verify the resolved crate notice before release. The hook checks only the selected modifier/key and calls the next hook without suppressing input. |
+| `windows` | Windows UI Automation COM interfaces for reading the focused control's text selection | Microsoft Windows bindings; used only on activation, on a dedicated MTA action thread. |
 | Vite, TypeScript, `@tauri-apps/api` | Local frontend build and IPC | Verify exact resolved notices with the lockfiles before release. |
 
 ## Candidate projects reviewed
