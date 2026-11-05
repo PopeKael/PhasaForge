@@ -2,11 +2,12 @@
 
 ## Current shape
 
-- **Rust host:** Tauri 2 owns the Windows app process, tray icon and native window lifecycle. A dedicated `WH_KEYBOARD_LL` hook checks only the configured modifier/key pair and never suppresses keyboard events. For the configured chord it gives selection capture up to 100 ms before forwarding the trigger key, so the foreground editor has less opportunity to collapse the selection first. No other keystrokes are retained.
-- **Selection capture:** On activation, a separate action thread queries the focused control's UI Automation Text pattern before showing PhasaForge, then emits any selected text to the frontend. It does not touch the clipboard. Controls without a supported text-selection pattern need a format-preserving clipboard fallback.
+- **Rust host:** Tauri 2 owns the Windows process, tray menu and window lifecycle. A dedicated `WH_KEYBOARD_LL` callback tracks only the configured left/right modifier state and trigger. It queues capture work without waiting; unrelated keys pass through and only the configured trigger keydown/up is consumed.
+- **Selection capture:** A separate action thread reads UI Automation text and selection bounds before PhasaForge takes focus. If no selected text is exposed, an STA fallback snapshots the OLE clipboard data object, issues one Ctrl+C, reads Unicode text, and restores/flushed the prior data object. The UI reports if clipboard restoration fails. No clipboard polling runs at idle.
 - **Frontend:** Vite plus TypeScript and plain DOM/CSS. No frontend framework or remote runtime dependency. Windows system fonts are used.
 - **Persistence:** UI preferences and the user's meaning note use browser local storage in the app origin. No account or remote service is used.
-- **Speech:** `SpeechSynthesis` is asked only for an installed `th-*` voice. Microphone practice currently captures a local audio blob for the session and clearly reports that recognition is not implemented.
+- **Speech:** The Windows WinRT speech synthesizer enumerates installed `th-*` voices, synthesizes locally, and passes the WAV stream to the WebView for playback. The Web Speech API is a fallback only for Thai voices. Microphone practice captures and replays a local audio blob for the session; recognition is not implemented.
+- **Placement:** Selection bounds or cursor coordinates are measured in desktop physical pixels. The window is positioned right/below when space allows, flips left/above when needed, and clamps to the nearest monitor work area without changing its size.
 - **Assets:** `assets/` preserves the supplied UI concept and master icon. `src-tauri/icons/` contains a generated ICO derived from the supplied icon; the artwork itself is unchanged.
 
 ## Planned boundaries

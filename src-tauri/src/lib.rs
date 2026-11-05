@@ -6,6 +6,17 @@ use tauri::{
 
 mod hotkey;
 mod selection;
+mod speech;
+
+#[tauri::command]
+fn list_thai_voices() -> Vec<speech::ThaiVoice> {
+    speech::thai_voices()
+}
+
+#[tauri::command]
+async fn synthesize_thai(text: String, voice_id: String, rate: f64) -> Result<Vec<u8>, String> {
+    speech::synthesize(text, voice_id, rate).await
+}
 
 #[tauri::command]
 fn hide_main_window(window: tauri::Window) -> Result<(), String> {
@@ -51,7 +62,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey])
+        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai])
         .build(tauri::generate_context!())
         .expect("PhasaForge failed to start");
     app.run(|_, event| {

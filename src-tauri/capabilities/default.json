@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Default permissions for the PhasaForge main window",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-available-monitors",
+    "core:window:allow-cursor-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-set-position"
+  ]
 }

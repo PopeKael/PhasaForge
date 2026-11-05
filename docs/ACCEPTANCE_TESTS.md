@@ -1,24 +1,22 @@
 # Acceptance tests
 
-Status at 0.1.0. A checked item means the stated check was run and passed; blank items have not passed.
+Status at 0.1.1. A passed item names the evidence actually obtained; partial or unverified Windows interactions remain explicit.
 
 | Check | Status | Evidence / limit |
 |---|---|---|
-| Private GitHub repository exists and privacy verified | Passed | `PopeKael/PhasaForge` was created as private and its privacy was verified through the GitHub API. |
-| Source committed and pushed | Passed | UI Automation capture commit `dbf1673` is on `main`; the final remote tip also contains a documentation-only verification update. |
-| Frontend production build | Passed | `npm run build` produced Vite dist output. |
-| Rust/Tauri Windows compile | Passed | `cargo check --manifest-path src-tauri/Cargo.toml` and `npm run tauri build` passed with Cargo cache/target redirected to the approved Codex scratch folder. |
-| Installer install/uninstall | Blocked | Current-user NSIS silent attempt returned exit code 0 but created no app directory or uninstall entry; the interactive setup previously returned Windows “Illegal System DLL Relocation”. MSI is per-machine (`ALLUSERS=1`) and its install failed with Windows Installer Error 1925 / exit 1603 for insufficient privileges. No install/uninstall cycle completed. |
-| App launch and window | Partial | Fresh release executable launched and Windows reported a responsive `PhasaForge` window with a non-zero window handle; startup stderr was empty. The desktop automation approval reviewer rejected a visual launch/inspection with “Computer Use was not approved to use phasaforge.” Visual review and clean tray-menu shutdown remain unverified. |
-| Tray icon and shutdown | Partial | Tray is configured in source; visible tray appearance and clean menu shutdown remain unverified. |
-| Right Ctrl + Up shortcut, configuration, and pass-through | Partial | Low-level hook initialized without startup error and passes events through by source logic; Settings selectors compile. A physical keypress, UI status, and settings persistence across restart remain unverified. |
-| UI Automation selected-text capture | Implemented, not live-verified | Focused-control Text selection is queried before PhasaForge takes focus and any result is sent to the passage field. No Opera/editor/PDF selection has been exercised; no clipboard fallback is implemented. |
-| Monitor placement, DPI, resize, remembered geometry | Not accepted | Popup opens centered; advanced placement/state and borderless resizing need native implementation. |
-| Long passage and Thai grapheme handling | Not run | UI uses text areas and `Intl.Segmenter`; actual WebView behavior needs manual verification. |
-| Installed Thai TTS voice and speed | Not run | Uses only `th-*` voices exposed by Windows WebView; no Thai voice was verified on this PC. |
-| Local ASR, resource admission and release | Not accepted | Not implemented. |
-| Settings persistence across restart/upgrade | Not run | Basic same-origin local storage only. |
-| Signed update path | Not accepted | No updater or signing key configured. |
-| GitHub Actions workflow | Passed | `Windows validation and installer` completed successfully for UI Automation source commit `dbf1673`, including MSI and NSIS bundling. The following change only updates this acceptance record. |
+| Frontend unit checks | Passed | `npm run test:ui` passes tab visibility/Settings restoration and monitor-work-area placement tests. |
+| TypeScript | Passed | `npx tsc --noEmit` passed. |
+| Frontend production build | Passed | `npm run build` completed. |
+| Rust/Tauri compile and unit tests | Passed | `cargo check --manifest-path src-tauri/Cargo.toml` and `cargo test --manifest-path src-tauri/Cargo.toml` passed, including left/right modifier mapping tests. |
+| Windows executable and NSIS bundle | Built | `npx tauri build --bundles nsis` completed; unsigned 0.1.1 executable and NSIS setup artifact are in ignored `release-artifacts/0.1.1/`. Installer install/uninstall was not run. |
+| Fixed-size 640×480 interface and learning views | Visually checked | Live Windows app opened at 642×482 including its 1px border. Characters, Meaning, Practice, and Settings were inspected; one learning panel is visible at a time and Settings hides the tab strip while preserving the selected view. Screenshots are under `release-artifacts/0.1.1/ui-verification/`. |
+| Source text scrolling | Visually checked | An approximately 860-character Thai passage was entered; the source pane scrolled internally and the app page remained fixed. Demo content was restored afterward. |
+| Close to tray | Partially verified | Clicking the app's close-to-tray control removed the app window from the usable window set. Tray icon and Open/Quit menu actions were not independently inspected. |
+| Thai speech discovery and rate limits | Partially verified | This PC exposed no installed Thai voice; playback correctly reported unavailable. No English fallback was offered. Real Thai audio, voice quality, and speed were not tested. Windows speech voice availability varies by installed language features; see Microsoft's [language settings](https://support.microsoft.com/en-au/windows/hardware/input-devices/manage-the-language-and-keyboard-input-layout-settings-in-windows). |
+| Recording and replay | Implemented, not live-verified | Browser MediaRecorder flow and resource cleanup are implemented; microphone permission, a live recording, replay, and re-record were not exercised. No ASR or scoring is claimed. |
+| Physical hotkey and external selection capture | Partially verified | Hook logic and UIA/clipboard paths compile; unit checks cover modifier mapping. A physical Right Ctrl+Up press against another app, real selection capture, clipboard format restoration, and actual popup repositioning were not verified in this session. Injected desktop keys are not equivalent to a physical key test. |
+| Monitor edges, DPI, and drag resize | Partial | Pure placement tests cover work-area edges including negative coordinates. Live multi-monitor/DPI placement and user drag movement/resizing were not verified. |
+| Installer install/uninstall | Not verified | NSIS packaging succeeded; this session did not run an installation cycle. |
+| Repository checkpoint | Pending | Record the commit and remote tip after the source changes are committed and pushed. |
 
-Before calling 0.1.0 an accepted Windows release, inspect the real app against `../assets/ui-concept.png`, exercise the hotkey and tray, and complete a normal install/uninstall cycle. Do not turn source inspection into a claim of live acceptance.
+This is a tested build candidate, not a claim that every desktop integration has passed on this machine. The remaining checks above require real Windows interaction or an installed Thai speech voice.

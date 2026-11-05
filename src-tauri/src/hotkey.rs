@@ -9,11 +9,12 @@ use windows_sys::Win32::Foundation::{GetLastError, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-    VK_DOWN, VK_LCONTROL, VK_LMENU, VK_RCONTROL, VK_RMENU, VK_SPACE, VK_UP,
+    VK_CONTROL, VK_DOWN, VK_LCONTROL, VK_LMENU, VK_MENU, VK_RCONTROL, VK_RMENU, VK_SPACE, VK_UP,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
-    TranslateMessage, UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG,
+    TranslateMessage, UnhookWindowsHookEx, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED,
+    LLKHF_INJECTED, MSG,
     WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
@@ -32,9 +33,10 @@ static LEFT_CONTROL_DOWN: AtomicBool = AtomicBool::new(false);
 static RIGHT_ALT_DOWN: AtomicBool = AtomicBool::new(false);
 static LEFT_ALT_DOWN: AtomicBool = AtomicBool::new(false);
 static TRIGGER_DOWN: AtomicBool = AtomicBool::new(false);
+static CHORD_TRIGGERED: AtomicBool = AtomicBool::new(false);
 static HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
 static HOOK_THREAD_ID: AtomicU32 = AtomicU32::new(0);
-static TRIGGER_SENDER: OnceLock<Sender<SyncSender<()>>> = OnceLock::new();
+static TRIGGER_SENDER: OnceLock<Sender<()>> = OnceLock::new();
 
 fn modifier_code(value: &str) -> Option<u32> {
     match value {
@@ -73,7 +75,7 @@ pub fn configure(modifier: &str, key: &str) -> Result<(), String> {
 }
 
 pub fn start(app: AppHandle) -> Result<(), String> {
-    let (trigger_tx, trigger_rx) = mpsc::channel::<SyncSender<()>>();
+    let (trigger_tx, trigger_rx) = mpsc::channel::<()>();
     TRIGGER_SENDER
         .set(trigger_tx)
         .map_err(|_| "The hotkey listener is already initialized".to_string())?;
@@ -81,16 +83,12 @@ pub fn start(app: AppHandle) -> Result<(), String> {
     thread::Builder::new()
         .name("PhasaForge hotkey actions".to_string())
         .spawn(move || {
-            while let Ok(acknowledge) = trigger_rx.recv() {
+            while trigger_rx.recv().is_ok() {
+                wait_for_modifier_release();
                 let captured = selection::selected_text();
                 if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    if let Some(text) = captured {
-                        let _ = window.emit("selection-captured", text);
-                    }
+                    let _ = window.emit("selection-captured", captured);
                 }
-                let _ = acknowledge.send(());
             }
         })
         .map_err(|error| error.to_string())?;
@@ -165,7 +163,7 @@ unsafe extern "system" fn low_level_keyboard_proc(
             let is_up = matches!(message, WM_KEYUP | WM_SYSKEYUP);
             if is_down || is_up {
                 let pressed = is_down;
-                match event.vkCode {
+                match normalized_modifier(event) {
                     VK_CONTROL_RIGHT => RIGHT_CONTROL_DOWN.store(pressed, Ordering::Relaxed),
                     VK_CONTROL_LEFT => LEFT_CONTROL_DOWN.store(pressed, Ordering::Relaxed),
                     VK_ALT_RIGHT => RIGHT_ALT_DOWN.store(pressed, Ordering::Relaxed),
@@ -176,17 +174,17 @@ unsafe extern "system" fn low_level_keyboard_proc(
                 if event.vkCode == TRIGGER_KEY.load(Ordering::Relaxed) {
                     if is_up {
                         TRIGGER_DOWN.store(false, Ordering::Relaxed);
+                        if CHORD_TRIGGERED.swap(false, Ordering::Relaxed) {
+                            return 1;
+                        }
                     } else if !TRIGGER_DOWN.swap(true, Ordering::Relaxed)
                         && configured_modifier_is_down()
                     {
+                        CHORD_TRIGGERED.store(true, Ordering::Relaxed);
                         if let Some(sender) = TRIGGER_SENDER.get() {
-                            let (acknowledge, acknowledged) = mpsc::sync_channel(1);
-                            if sender.send(acknowledge).is_ok() {
-                                // Give UI Automation a brief head start before the trigger
-                                // reaches the foreground app and can collapse its selection.
-                                let _ = acknowledged.recv_timeout(Duration::from_millis(100));
-                            }
+                            let _ = sender.send(());
                         }
+                        return 1;
                     }
                 }
             }
@@ -196,6 +194,19 @@ unsafe extern "system" fn low_level_keyboard_proc(
     CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
 }
 
+fn normalized_modifier(event: &KBDLLHOOKSTRUCT) -> u32 {
+    let extended = event.flags & LLKHF_EXTENDED != 0;
+    match event.vkCode {
+        code if code == VK_CONTROL as u32 => {
+            if extended { VK_CONTROL_RIGHT } else { VK_CONTROL_LEFT }
+        }
+        code if code == VK_MENU as u32 => {
+            if extended { VK_ALT_RIGHT } else { VK_ALT_LEFT }
+        }
+        code => code,
+    }
+}
+
 fn configured_modifier_is_down() -> bool {
     match MODIFIER_KEY.load(Ordering::Relaxed) {
         VK_CONTROL_RIGHT => RIGHT_CONTROL_DOWN.load(Ordering::Relaxed),
@@ -203,5 +214,33 @@ fn configured_modifier_is_down() -> bool {
         VK_ALT_RIGHT => RIGHT_ALT_DOWN.load(Ordering::Relaxed),
         VK_ALT_LEFT => LEFT_ALT_DOWN.load(Ordering::Relaxed),
         _ => false,
+    }
+}
+
+fn wait_for_modifier_release() {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while configured_modifier_is_down() && std::time::Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(8));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distinguishes_left_and_right_control_from_windows_flags() {
+        let left = KBDLLHOOKSTRUCT { vkCode: VK_CONTROL as u32, ..Default::default() };
+        let right = KBDLLHOOKSTRUCT { vkCode: VK_CONTROL as u32, flags: LLKHF_EXTENDED, ..Default::default() };
+        assert_eq!(normalized_modifier(&left), VK_CONTROL_LEFT);
+        assert_eq!(normalized_modifier(&right), VK_CONTROL_RIGHT);
+    }
+
+    #[test]
+    fn preserves_native_left_and_right_virtual_keys() {
+        let left = KBDLLHOOKSTRUCT { vkCode: VK_LMENU as u32, ..Default::default() };
+        let right = KBDLLHOOKSTRUCT { vkCode: VK_RMENU as u32, ..Default::default() };
+        assert_eq!(normalized_modifier(&left), VK_ALT_LEFT);
+        assert_eq!(normalized_modifier(&right), VK_ALT_RIGHT);
     }
 }

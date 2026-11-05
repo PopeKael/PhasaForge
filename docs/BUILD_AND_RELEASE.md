@@ -11,7 +11,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 npm run tauri build
 ```
 
-Tauri's Windows bundler supports MSI and NSIS installers; this project selects both. Output is under `src-tauri/target/release/bundle/`.
+Tauri's Windows bundler supports MSI and NSIS installers; this project selects both. Output is under `src-tauri/target/release/bundle/`. The release workflow also keeps a copy of the executable and NSIS installer under the ignored `release-artifacts/` folder for local testing.
 
 ## CI
 
@@ -19,6 +19,6 @@ Tauri's Windows bundler supports MSI and NSIS installers; this project selects b
 
 ## Update status and signing
 
-There is no active updater in 0.1.0. The repository has no signing key and no configured private update endpoint. Keep the repository private. Before enabling Tauri updater artifacts, generate a key outside Git, store the private key and password only as protected GitHub Actions secrets, configure the public key in the app, and provide a private-test endpoint accessible to intended users. Private GitHub Releases do not provide an unauthenticated updater feed. Public release remains an explicit product decision.
+There is no active updater in 0.1.1. The repository has no signing key and no configured private update endpoint. Keep the repository private. Before enabling Tauri updater artifacts, generate a key outside Git, store the private key and password only as protected GitHub Actions secrets, configure the public key in the app, and provide a private-test endpoint accessible to intended users. Private GitHub Releases do not provide an unauthenticated updater feed. Public release remains an explicit product decision.
 
 The current workflow creates unsigned test installers. Do not describe them as production signed releases or as exercising the update process.

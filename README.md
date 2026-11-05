@@ -2,23 +2,23 @@
 
 **PhasaForge** is a standalone Windows Thai-learning companion for exploring Thai text in context. It is designed around the approved compact popup and the supplied ภ, sound-wave and anvil artwork.
 
-> Version 0.1.0 is an early engineering build. It is not yet the complete product described in `docs/PRODUCT_SPEC.md`. The status table below is the current source of truth.
+> Version 0.1.1 is a recovery build. Translation, verified Thai pronunciation guidance, speech recognition, and pronunciation scoring remain outside this build.
 
 ## Current status
 
 | Capability | Status |
 |---|---|
 | Windows desktop shell, compact popup, tray menu | Implemented; direct launch verified on this PC |
-| Right/left modifier shortcut settings | Dedicated Windows low-level hook and settings controls implemented; physical key activation still needs verification |
-| Selected-text capture | Windows UI Automation selection path implemented; controls without a text-selection provider still need clipboard fallback |
+| Right/left modifier shortcut settings | Dedicated non-blocking Windows hook distinguishes left/right modifiers; only the configured trigger key is consumed |
+| Selected-text capture | UI Automation text and selection bounds, with an OLE clipboard fallback that restores the original clipboard object |
 | Manual Thai text entry and passage navigation | Implemented |
-| Thai voice playback | Uses an installed Thai voice exposed by Windows WebView; not yet verified on this PC |
+| Thai voice playback | Lists installed Windows Thai voices through WinRT, synthesizes locally, and does not fall back to English; audio still requires voice-by-voice listening checks |
 | Character/grapheme inspection | Basic Unicode grapheme selection and cautious script labels; not linguistic analysis |
-| Thai selected-text capture and clipboard preservation | Not implemented; shortcut currently opens the popup for manual paste |
+| Practice recording and replay | Local record/stop/replay/record-again flow; no transcription or score is fabricated |
 | Natural translation and trusted romanisation | Not implemented; no fabricated output is shown |
-| Local speech recognition, model admission/unloading, pronunciation feedback | Not implemented; recording demonstrates mic capture only and says so |
+| Local speech recognition, model admission/unloading, pronunciation feedback | Not implemented |
 | Settings persistence | Basic local persistence for speed, voice, and notes |
-| Installer, update signing, private update delivery | Workflows/docs scaffolded; not yet built or exercised |
+| Installer, update signing, private update delivery | Unsigned NSIS/MSI test installers are configured; install/uninstall and updater remain separate acceptance items |
 
 The audio/video library in `D:\Music\Thai Language` is reference material only. It is not copied, packaged, indexed, or included in this repository.
 
@@ -37,7 +37,7 @@ Build the Windows installer:
 npm run tauri build
 ```
 
-The app uses the system's installed Thai speech voice when available. If none is found, speech playback stays unavailable instead of substituting English. The current build listens for the configured modifier/key pair using a low-level Windows keyboard hook, defaults to Right Ctrl + Up, and passes all key events through. The earlier generic Ctrl+Up registration failed and has been removed. A selected passage is read through Windows UI Automation before the popup takes focus; clipboard fallback is not implemented yet.
+The native Windows speech backend enumerates installed Thai voices and uses the chosen voice at 0.5×–1.0×. To install speech, open **Settings → Time & language → Language & region → Thai → Language options** and add **Text-to-speech** if Windows offers it. Narrator's **Add voices** route may expose additional Windows voices. PhasaForge uses the WinRT speech interface even when WebView's voice list omits them. The hotkey defaults to Right Ctrl + Up. It reads the selection before bringing the popup forward; if UI Automation cannot read the selected text, a one-shot Ctrl+C fallback temporarily uses and then restores the clipboard. The Settings gear opens a separate view and returns to the previous learning tab.
 
 ## Help and Community
 

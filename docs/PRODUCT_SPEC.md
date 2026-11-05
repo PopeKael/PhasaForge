@@ -21,6 +21,8 @@ Use the supplied 640 × 480 compact popup concept and final PhasaForge icon as a
 - Keep providers replaceable and settings local. Model storage is separately configurable.
 - Ship a versioned Windows installer and signed update artifacts only after key management and private release delivery are actually configured.
 
-## 0.1.0 status
+## 0.1.1 recovery scope
 
-This build has a Tauri 2 shell and UI scaffold. Manual text editing, basic sentence stepping, grapheme selection, local settings, tray menu, a configurable Right Ctrl + Up low-level hook and a focused-control UI Automation selection path are implemented. The hook passes key events through. Direct launch showed a PhasaForge window handle/title, but the physical shortcut, captured selection and popup contents still need desktop verification. UI Automation support varies by application; clipboard fallback is not implemented. Installed Thai voice playback depends on what Windows WebView exposes and remains unverified. Translation, authoritative romanisation, real ASR, resource admission, position-aware popup behaviour, adjustable native resize, autostart, signing, updater and installer install/uninstall verification remain future work.
+This build fixes single-tab visibility, the compact 640 × 480 layout, separate Settings navigation, draggable title bar, close-to-tray controls, Windows-native Thai voice discovery and synthesis, local recording playback, and selection/cursor-aware work-area placement. The non-blocking hotkey reads UI Automation text and bounds, then falls back to a one-shot Ctrl+C while restoring the OLE clipboard data object. Regression checks cover tab state, monitor-edge placement and left/right modifier normalization.
+
+The installed Thai voice list and real audio still require live verification on a machine with an installed Thai TTS voice. Physical-key activation, selection capture in representative Opera/editor controls, multiple monitors and mixed DPI also need desktop acceptance. Translation, authoritative romanisation, real ASR, resource admission, autostart, signing and an updater remain unimplemented.
