@@ -19,16 +19,16 @@ if ($installProcess.ExitCode -ne 0) { throw "NSIS installer failed: $($installPr
 $uninstallKeyPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
 $entries = @(Get-ChildItem -Path $uninstallKeyPath | ForEach-Object {
   Get-ItemProperty -LiteralPath $_.PSPath
-} | Where-Object { $_.DisplayName -like 'PhasaForge*' })
+} | Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -like 'PhasaForge*' })
 if ($entries.Count -ne 1) {
   throw "Expected exactly one current-user PhasaForge uninstall entry, found $($entries.Count)."
 }
 $entry = $entries[0]
 Write-Host "Registered app: $($entry.DisplayName)"
-Write-Host "InstallLocation: $($entry.InstallLocation)"
+if ($entry.PSObject.Properties['InstallLocation']) { Write-Host "InstallLocation: $($entry.InstallLocation)" } else { Write-Host 'InstallLocation: (not recorded)' }
 
 $locations = @()
-if ($entry.InstallLocation) { $locations += $entry.InstallLocation }
+if ($entry.PSObject.Properties['InstallLocation'] -and $entry.InstallLocation) { $locations += $entry.InstallLocation }
 $locations += (Join-Path $env:LOCALAPPDATA 'PhasaForge')
 $installedExe = $null
 foreach ($dir in $locations) {
@@ -44,7 +44,7 @@ if (-not $installedExe) {
 Write-Host "Installed executable: $installedExe"
 
 $uninstaller = $null
-if ($entry.UninstallString) {
+if ($entry.PSObject.Properties['UninstallString'] -and $entry.UninstallString) {
   $uninstallCommand = [string]$entry.UninstallString
   if ($uninstallCommand -match '^"([^"]+\.exe)"') {
     $uninstaller = $Matches[1]
@@ -70,7 +70,7 @@ if (Test-Path -LiteralPath $installedExe -PathType Leaf) {
 }
 $remaining = @(Get-ChildItem -Path $uninstallKeyPath | ForEach-Object {
   Get-ItemProperty -LiteralPath $_.PSPath
-} | Where-Object { $_.DisplayName -like 'PhasaForge*' })
+} | Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.DisplayName -like 'PhasaForge*' })
 if ($remaining.Count -gt 0) {
   throw "Uninstall returned success but the current-user uninstall entry remains."
 }
