@@ -1,6 +1,6 @@
 [package]
 name = "phasaforge"
-version = "0.3.3"
+version = "0.3.4"
 description = "A compact Thai learning companion for Windows"
 authors = ["Warren Gerdes"]
 edition = "2021"

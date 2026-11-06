@@ -37,6 +37,94 @@ ttsAudio.addEventListener("error", () => {
 type Settings = { speed: number; voice: string; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string; translationProviderConfigured: boolean };
 type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
 type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
+
+function renderSentencePronunciation(card: SentenceCard | undefined): void {
+  const thai = $("thai-focus");
+  const pronunciation = $("romanization");
+  thai.replaceChildren();
+  pronunciation.replaceChildren();
+  const sentence = card?.text;
+  if (!card || !sentence) {
+    thai.textContent = "Paste a Thai passage to begin.";
+    pronunciation.textContent = "Pronunciation appears with the word breakdown.";
+    return;
+  }
+
+  const linkedGroups = new Set<number>();
+  let cursor = 0;
+  let alignmentIntact = true;
+  for (let index = 0; index < card.words.length; index++) {
+    const word = card.words[index];
+    const position = alignmentIntact ? sentence.indexOf(word.word, cursor) : -1;
+    if (!word.word || position < 0) {
+      alignmentIntact = false;
+      continue;
+    }
+    thai.append(document.createTextNode(sentence.slice(cursor, position)));
+    if (word.reading) {
+      const chunk = document.createElement("span");
+      chunk.className = "linked-syllable-chunk";
+      chunk.dataset.syllableGroup = String(index);
+      chunk.dataset.syllableCount = String(Math.max(1, word.syllables.length));
+      chunk.lang = "th";
+      chunk.tabIndex = 0;
+      chunk.textContent = word.word;
+      chunk.setAttribute("aria-label", `${word.word}, ${word.reading}`);
+      thai.append(chunk);
+      linkedGroups.add(index);
+    } else {
+      thai.append(document.createTextNode(word.word));
+    }
+    cursor = position + word.word.length;
+  }
+  thai.append(document.createTextNode(sentence.slice(cursor)));
+
+  pronunciation.append(document.createTextNode("Pronunciation: "));
+  if (!card.words.length) {
+    pronunciation.append(document.createTextNode("Thai words not detected"));
+    return;
+  }
+  const pairs = new Map<number, HTMLSpanElement[]>();
+  for (let index = 0; index < card.words.length; index++) {
+    if (index > 0) pronunciation.append(document.createTextNode(" · "));
+    const word = card.words[index];
+    if (!word.reading) {
+      pronunciation.append(document.createTextNode("[reading unavailable]"));
+      continue;
+    }
+    if (!linkedGroups.has(index)) {
+      pronunciation.append(document.createTextNode(word.reading));
+      continue;
+    }
+    const chunk = document.createElement("span");
+    chunk.className = "linked-syllable-chunk";
+    chunk.dataset.syllableGroup = String(index);
+    chunk.dataset.syllableCount = String(Math.max(1, word.syllables.length));
+    chunk.lang = "und-Latn";
+    chunk.tabIndex = 0;
+    chunk.textContent = word.reading;
+    chunk.setAttribute("aria-label", `${word.word}, ${word.reading}`);
+    pronunciation.append(chunk);
+    const pair = pairs.get(index) ?? [];
+    pair.push(chunk);
+    pairs.set(index, pair);
+  }
+
+  for (const [index, chunks] of pairs) {
+    const thaiChunk = thai.querySelector<HTMLSpanElement>(`[data-syllable-group="${index}"]`);
+    if (!thaiChunk) continue;
+    chunks.push(thaiChunk);
+    const highlight = () => chunks.forEach(chunk => chunk.classList.add("syllable-highlight"));
+    const clear = () => chunks.forEach(chunk => chunk.classList.remove("syllable-highlight"));
+    chunks.forEach(chunk => {
+      chunk.addEventListener("mouseenter", highlight);
+      chunk.addEventListener("mouseleave", clear);
+      chunk.addEventListener("focus", highlight);
+      chunk.addEventListener("blur", clear);
+    });
+  }
+}
+
 const defaults: Settings = { speed: 0.75, voice: "", hotkeyModifier: "right_ctrl", hotkeyKey: "up", translationProvider: "azure", translationModel: "", translationProviderConfigured: true };
 const loadSettings = (): Settings => {
   try { const saved = JSON.parse(localStorage.getItem(settingsKey) ?? "{}"); const value = { ...defaults, ...saved }; if (saved.translationProviderConfigured !== true) { value.translationProvider = "azure"; value.translationProviderConfigured = true; } return value; }
@@ -48,10 +136,9 @@ let analysisRequest = 0;
 
 function renderSentence(card: SentenceCard | undefined): void {
   const current = card?.text ?? "";
-  $("thai-focus").textContent = current || "Paste a Thai passage to begin.";
+  renderSentencePronunciation(card);
   $("sentence-position").textContent = `(Sentence ${analysis.length ? sentenceIndex + 1 : 0} of ${analysis.length})`;
   $("passage-count").textContent = `${analysis.length ? sentenceIndex + 1 : 0} of ${analysis.length}`;
-  $("romanization").textContent = current ? `Pronunciation: ${card?.reading || "Thai words not detected"}` : "Pronunciation appears with the word breakdown.";
   $("meaning-line").textContent = card?.meaning ? `Meaning: ${card.meaning}` : "Meaning: translation pending…";
   $("translation-english").textContent = card?.meaning ?? (current ? "Translation pending…" : "The sentence meaning will appear here.");
   $("translation-source").textContent = card?.meaning_source ? `Source: ${card.meaning_source}. Dictionary meanings are learner-drafted and may need checking.` : "Translation is automatic. Exact offline examples appear instantly; new text uses the selected provider.";

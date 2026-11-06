@@ -1,5 +1,13 @@
 # Acceptance record
 
+## Version 0.3.4 — linked syllable highlighting
+
+| Check | Result | Evidence |
+|---|---|---|
+| Pairing and bidirectional hover | Passed, hidden Tauri window | Hovering Thai `ผลไม้` highlights it and its grouped reading `pǒn-lá-máai`; hovering either side highlights the pair and leaving clears both. The pair uses existing word, reading and syllable-count data. The test confirms the soft-yellow marker styling and identical element bounds before/after hover. See `release-artifacts/0.3.4/ui-check/hover-thai.png` and `hover-roman.png`. |
+| Short/long passages and layout | Passed, hidden Tauri window | Short Thai example has paired chunks and tone-marked readings. A 211-character long example retained 48 word entries and 416 characters of pronunciation; 92 px of sentence viewport scrolls 245 px of content. Dictionary entries without reliable alignment remain plain. Window remains 640×480. |
+| Build/tests/installer | Passed | Production build; 5 frontend UI tests; 10 Rust library tests; hidden bidirectional hover test. NSIS package silently installed (exit 0), reported ProductVersion 0.3.4, then uninstalled (exit 0) from a temporary directory that was removed. |
+
 ## Version 0.3.3 — sentence readability refinement
 
 | Check | Result | Evidence |

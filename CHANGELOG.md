@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4 — linked syllable highlighting
+
+- Increased Current Sentence Thai text from 19 px to 22 px.
+- Paired hoverable Thai word chunks with their existing romanized readings; multi-syllable word readings remain grouped as one chunk.
+- Highlighted both paired chunks with a soft yellow marker effect, with matching keyboard focus behavior and no sizing changes on hover.
+- Left unaligned or unreadable chunks plain rather than guessing a pairing.
+- Added hidden short/long passage checks for bidirectional hover, clearing, stable geometry and one-to-one chunk links.
+
 ## 0.3.3 — sentence readability refinement
 
 - Reduced the Selected Text and audio section heights by 15 px and added those 15 px to Current Sentence.

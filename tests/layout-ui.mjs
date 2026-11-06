@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 // Runs against a separate invisible Tauri window and isolated app-data identity.
 const root = resolve(".");
 const scratch = await mkdtemp(join(tmpdir(), "phasaforge-layout-ui-"));
-const screenshots = join(root, "release-artifacts", "0.3.3", "ui-check");
+const screenshots = join(root, "release-artifacts", "0.3.4", "ui-check");
 await mkdir(join(scratch, "Roaming"), { recursive: true });
 await mkdir(join(scratch, "Local"), { recursive: true });
 await mkdir(screenshots, { recursive: true });
@@ -84,7 +84,7 @@ try {
   assert.equal(layout.focus.height, 133, "Current Sentence receives the 15 px recovered from Selected Text");
   assert.equal(layout.controls.every(Boolean), true, "all speech controls and the speed slider remain available");
   assert.equal(layout.sourceStyle.fontSize, "15px");
-  assert.equal(layout.thaiStyle.fontSize, "19px");
+  assert.equal(layout.thaiStyle.fontSize, "22px", "Thai sentence text is 2 pt larger than 0.3.3");
   assert.equal(layout.romanStyle.whiteSpace, "normal");
   assert.equal(layout.romanStyle.fontSize, "13px");
   assert.equal(layout.summaryStyle.fontSize, "14px");
@@ -110,6 +110,37 @@ try {
   assert.equal(short.thai, shortThai);
   assert.ok(short.reading.startsWith("Pronunciation:") && short.reading.length > 20);
   assert.ok(short.words.length > 3);
+  const groups = await evaluate(`(() => {
+    const ids=[...new Set([...document.querySelectorAll('.linked-syllable-chunk')].map(e=>e.dataset.syllableGroup))];
+    return ids.map(id=>({id,thai:[...document.querySelectorAll('#thai-focus .linked-syllable-chunk')].filter(e=>e.dataset.syllableGroup===id).length,roman:[...document.querySelectorAll('#romanization .linked-syllable-chunk')].filter(e=>e.dataset.syllableGroup===id).length,syllableCount:Number(document.querySelector('#thai-focus [data-syllable-group="'+id+'"]').dataset.syllableCount),thaiText:document.querySelector('#thai-focus [data-syllable-group="'+id+'"]').textContent,romanText:document.querySelector('#romanization [data-syllable-group="'+id+'"]').textContent}));
+  })()`);
+  assert.ok(groups.length > 4, "existing Thai word/readings form paired chunks");
+  assert.ok(groups.every(group => group.thai === 1 && group.roman === 1 && group.thaiText && group.romanText), "each linked group has exactly one Thai and one romanized chunk");
+  assert.ok(groups.some(group => group.syllableCount > 1), "multi-syllable words remain grouped using the dictionary syllable data");
+  const hoverGroup = (groups.find(group => group.syllableCount > 1) ?? groups[0]).id;
+  for (const direction of ["thai", "roman"]) {
+    const hover = await evaluate(`(() => {
+      const group=${JSON.stringify(hoverGroup)};
+      const thai=document.querySelector('#thai-focus [data-syllable-group="'+group+'"]');
+      const roman=document.querySelector('#romanization [data-syllable-group="'+group+'"]');
+      const target=${JSON.stringify(direction)}==='thai'?thai:roman;
+      const before=[thai.getBoundingClientRect(),roman.getBoundingClientRect()].map(r=>[r.x,r.y,r.width,r.height]);
+      target.dispatchEvent(new MouseEvent('mouseenter'));
+      const highlighted=thai.classList.contains('syllable-highlight')&&roman.classList.contains('syllable-highlight');
+      const markerColor=getComputedStyle(thai).backgroundColor;
+      const markerShadow=getComputedStyle(thai).boxShadow;
+      const after=[thai.getBoundingClientRect(),roman.getBoundingClientRect()].map(r=>[r.x,r.y,r.width,r.height]);
+      return {highlighted,markerColor,markerShadow,before,after};
+    })()`);
+    assert.equal(hover.highlighted, true, `hovering ${direction} highlights both corresponding chunks`);
+    assert.match(hover.markerColor, /255, 222, 92/, "highlight uses the soft yellow marker color");
+    assert.notEqual(hover.markerShadow, "none", "marker underline is visible");
+    assert.deepEqual(hover.after, hover.before, "highlighting does not shift layout");
+    const screenshot = await call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
+    await writeFile(join(screenshots, `hover-${direction}.png`), Buffer.from(screenshot.data, "base64"));
+    const cleared = await evaluate(`(() => {const group=${JSON.stringify(hoverGroup)};const target=document.querySelector('#${direction === "thai" ? "thai-focus" : "romanization"} [data-syllable-group="'+group+'"]');target.dispatchEvent(new MouseEvent('mouseleave'));return !document.querySelector('#thai-focus [data-syllable-group="'+group+'"]').classList.contains('syllable-highlight')&&!document.querySelector('#romanization [data-syllable-group="'+group+'"]').classList.contains('syllable-highlight');})()`);
+    assert.equal(cleared, true, `leaving ${direction} clears both highlights`);
+  }
   await evaluate("document.querySelector('[data-tab=meaning]').click()");
   assert.ok(await evaluate("!document.querySelector('#meaning-view').hidden"));
   const shortMeaning = await evaluate(`(() => {const e=document.querySelector('#translation-english');const r=e.getBoundingClientRect();return {text:e.textContent,font:getComputedStyle(e).fontSize,width:r.width,height:r.height,scrollHeight:e.parentElement.scrollHeight,clientHeight:e.parentElement.clientHeight,overflow:getComputedStyle(e.parentElement).overflowY};})()`);
@@ -123,6 +154,10 @@ try {
   const long = await enterThai(longThai);
   assert.equal(long.thai, longThai);
   assert.ok(long.words.length > 10);
+  const longGroups = await evaluate(`(() => {const ids=[...new Set([...document.querySelectorAll('.linked-syllable-chunk')].map(e=>e.dataset.syllableGroup))];return ids.map(id=>[...document.querySelectorAll('.linked-syllable-chunk')].filter(e=>e.dataset.syllableGroup===id).length);})()`);
+  assert.ok(longGroups.length > 10 && longGroups.every(count => count === 2), "long passage retains one-to-one paired chunks where dictionary alignment exists");
+  const longHover = await evaluate(`(() => {const thai=document.querySelector('#thai-focus .linked-syllable-chunk');const group=thai.dataset.syllableGroup;const roman=document.querySelector('#romanization [data-syllable-group="'+group+'"]');thai.dispatchEvent(new MouseEvent('mouseenter'));const matched=thai.classList.contains('syllable-highlight')&&roman?.classList.contains('syllable-highlight');thai.dispatchEvent(new MouseEvent('mouseleave'));return Boolean(matched)&&!thai.classList.contains('syllable-highlight')&&!roman?.classList.contains('syllable-highlight');})()`);
+  assert.equal(longHover, true, "long passage chunks also highlight and clear their matching pronunciation");
   const focusScroll = await evaluate(`(() => {const e=document.querySelector('.focus-details');return {client:e.clientHeight,scroll:e.scrollHeight,overflow:getComputedStyle(e).overflowY};})()`);
   assert.equal(focusScroll.overflow, "auto");
   assert.ok(focusScroll.scroll > focusScroll.client, "long Thai and pronunciation remain available in the sentence panel scroll area");

@@ -1,10 +1,10 @@
 # PhasaForge
 
-PhasaForge is a compact Windows Thai study popup. Version 0.3.3 turns selected or pasted Thai into offline sentence analysis and clickable word cards within the 640×480 window, with automatic Azure Translator F0 English translation and Thai speech.
+PhasaForge is a compact Windows Thai study popup. Version 0.3.4 turns selected or pasted Thai into offline sentence analysis and clickable word cards within the 640×480 window, with automatic Azure Translator F0 English translation and Thai speech.
 
-## What 0.3.3 does
+## What 0.3.4 does
 
-The compact reading layout trades 15 px from Selected Text to Current Sentence, uses smaller Play controls, and enlarges the Thai sentence and its pronunciation/meaning lines. The Meaning, Words and Practice tabs remain unchanged. See [the 0.3.3 acceptance record](docs/ACCEPTANCE_TESTS.md#version-033--sentence-readability-refinement).
+Hovering a Thai sentence chunk or its romanized reading highlights the matching pair using existing word segmentation and pronunciation data. Chunks without reliable alignments remain unlinked; grouped syllables stay together within their source word. See [the 0.3.4 acceptance record](docs/ACCEPTANCE_TESTS.md#version-034--linked-syllable-highlighting).
 
 - Splits sentences and Thai words with [Khám](https://crates.io/crates/kham-core), using the bundled ThaiReader vocabulary as an additional segmentation dictionary.
 - Looks up learner meanings, Paiboon+ readings, syllable divisions, examples, source notes and confidence in an embedded SQLite database. The first run copies the database to the user's Windows application-data directory; saved corrections remain local and survive app updates.
