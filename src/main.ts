@@ -17,7 +17,7 @@ let mediaRecorder: MediaRecorder | undefined;
 let recordedChunks: Blob[] = [];
 let stream: MediaStream | undefined;
 let recordingUrl: string | undefined;
-let activeTab = "characters";
+let activeTab = "words";
 let settingsOpen = false;
 let nativeThaiVoices: { id: string; name: string; language: string }[] = [];
 let ttsAudioUrl: string | undefined;
@@ -32,30 +32,51 @@ ttsAudio.addEventListener("error", () => {
   finishSpeech();
 });
 
-type Settings = { speed: number; voice: string; modelFolder: string; meaning: string; hotkeyModifier: string; hotkeyKey: string };
-const defaults: Settings = { speed: 0.75, voice: "", modelFolder: "", meaning: "", hotkeyModifier: "right_ctrl", hotkeyKey: "up" };
+type Settings = { speed: number; voice: string; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string };
+type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
+type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
+const defaults: Settings = { speed: 0.75, voice: "", hotkeyModifier: "right_ctrl", hotkeyKey: "up", translationProvider: "offline", translationModel: "" };
 const loadSettings = (): Settings => {
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(settingsKey) ?? "{}") }; }
   catch { return defaults; }
 };
 let settings = loadSettings();
+let analysis: SentenceCard[] = [];
+let analysisRequest = 0;
 
-function splitSentences(text: string): string[] {
-  // Keep punctuation with its sentence; this is a cautious clause-level fallback for Thai text.
-  return text.replace(/\r/g, "").split(/(?<=[.!?。！？\n])\s*/u).map(x => x.trim()).filter(Boolean);
+function renderSentence(card: SentenceCard | undefined): void {
+  const current = card?.text ?? "";
+  $("thai-focus").textContent = current || "Paste a Thai passage to begin.";
+  $("sentence-position").textContent = `(Sentence ${analysis.length ? sentenceIndex + 1 : 0} of ${analysis.length})`;
+  $("passage-count").textContent = `${analysis.length ? sentenceIndex + 1 : 0} of ${analysis.length}`;
+  $("romanization").textContent = current ? `Pronunciation: ${card?.reading || "Thai words not detected"}` : "Pronunciation appears with the word breakdown.";
+  $("meaning-line").textContent = card?.meaning ? `Meaning: ${card.meaning}` : "Meaning: no sentence translation found in the offline examples.";
+  $("translation-source").textContent = card?.meaning_source ? `Source: ${card.meaning_source}. Dictionary meanings are learner-drafted and may need checking.` : "No exact sentence example is stored offline. You can ask a downloaded local translation model in Meaning.";
+  renderWords(card?.words ?? []);
+  localStorage.setItem(selectedKey, source.value);
 }
 
 function renderPassage(): void {
-  sentences = splitSentences(source.value);
-  sentenceIndex = Math.min(sentenceIndex, Math.max(sentences.length - 1, 0));
-  const current = sentences[sentenceIndex] ?? "";
-  $("thai-focus").textContent = current || "Paste a Thai passage to begin.";
-  $("sentence-position").textContent = `(Sentence ${sentences.length ? sentenceIndex + 1 : 0} of ${sentences.length})`;
-  $("passage-count").textContent = `${sentences.length ? sentenceIndex + 1 : 0} of ${sentences.length}`;
-  $("romanization").textContent = current ? "Romanisation is not provided. No unverified pronunciation guide is shown." : "Romanisation is not generated yet.";
-  $("meaning-line").textContent = settings.meaning ? `Meaning: ${settings.meaning}` : "Meaning: no translation supplied.";
-  renderCharacters(current);
-  localStorage.setItem(selectedKey, source.value);
+  const request = ++analysisRequest;
+  analysis = [];
+  sentenceIndex = 0;
+  renderSentence(undefined);
+  const text = source.value.trim();
+  if (!text) return;
+  if (!("__TAURI_INTERNALS__" in window)) { $("capture-status").textContent = "Thai analysis runs in the PhasaForge desktop app."; return; }
+  $("capture-status").textContent = "Segmenting Thai with the bundled offline language engine…";
+  void invoke<SentenceCard[]>("analyze_text", { text }).then(cards => {
+    if (request !== analysisRequest) return;
+    analysis = cards;
+    sentences = cards.map(card => card.text);
+    sentenceIndex = 0;
+    renderSentence(cards[0]);
+    $("capture-status").textContent = cards.length ? `Offline analysis ready · ${cards.length} sentence${cards.length === 1 ? "" : "s"}` : "No sentence text was found.";
+  }).catch(error => {
+    if (request !== analysisRequest) return;
+    $("capture-status").textContent = `Thai analysis failed: ${String(error)}`;
+    $("meaning-line").textContent = "Meaning: local dictionary could not be opened.";
+  });
 }
 
 function renderShortcut(): void {
@@ -64,45 +85,34 @@ function renderShortcut(): void {
   $("shortcut-label").textContent = `${modifiers[settings.hotkeyModifier] ?? "Right Ctrl"} + ${keys[settings.hotkeyKey] ?? "↑"}`;
 }
 
-function describeCharacter(char: string): string {
-  const cp = char.codePointAt(0) ?? 0;
-  if (cp >= 0x0e01 && cp <= 0x0e2e) return "Thai consonant letter";
-  if ((cp >= 0x0e30 && cp <= 0x0e3a) || (cp >= 0x0e40 && cp <= 0x0e4e)) {
-    if (cp >= 0x0e48 && cp <= 0x0e4b) return "Thai tone mark (written diacritic; its effect depends on the syllable)";
-    return "Thai vowel or combining mark (its role depends on the surrounding syllable)";
-  }
-  if (cp >= 0x0e50 && cp <= 0x0e59) return "Thai digit";
-  return "Other written character";
-}
-
-function renderCharacters(text: string): void {
-  const root = $("character-chips");
+function renderWords(words: WordCard[]): void {
+  const root = $("word-chips");
   root.replaceChildren();
-  if (!text) { root.innerHTML = '<span class="muted">Thai characters will appear here.</span>'; return; }
-  const segmenter = new Intl.Segmenter("th", { granularity: "grapheme" });
-  for (const { segment } of segmenter.segment(text)) {
-    if (/\s/u.test(segment)) continue;
+  if (!words.length) { root.textContent = "Thai word tiles appear when Thai text is available."; return; }
+  for (const word of words) {
     const button = document.createElement("button");
-    button.className = "character-chip";
+    button.className = "word-chip";
     button.lang = "th";
-    button.textContent = segment;
-    button.title = "Inspect this written component";
+    button.textContent = word.word;
+    button.title = word.meaning ?? "No dictionary meaning is available for this word";
     button.addEventListener("click", () => {
-      root.querySelectorAll(".character-chip").forEach(x => x.classList.remove("chosen"));
+      root.querySelectorAll(".word-chip").forEach(x => x.classList.remove("chosen"));
       button.classList.add("chosen");
-      $("character-large").textContent = segment;
-      const details = $("character-details");
+      $("word-large").textContent = word.word;
+      const details = $("word-details");
       details.replaceChildren();
-      const label = document.createElement("strong");
-      label.textContent = describeCharacter(segment);
-      const written = document.createElement("p");
-      written.textContent = "Written unit: " + segment + " · Unicode " + [...segment].map(c => "U+" + (c.codePointAt(0) ?? 0).toString(16).toUpperCase().padStart(4, "0")).join(" ");
-      const note = document.createElement("p");
-      note.textContent = "This is a script-level label only. Thai sound and tone are determined by the complete syllable, not by reading each visible mark in isolation.";
-      details.append(label, written, note);
+      const meaning = document.createElement("strong"); meaning.textContent = word.meaning ?? "Meaning not found in the local dictionary";
+      const reading = document.createElement("p"); reading.textContent = `Paiboon+ reading: ${word.reading ?? "unavailable"}`;
+      const syllables = document.createElement("div"); syllables.className = "word-syllables";
+      if (word.syllables.length) for (const item of word.syllables) { const tag = document.createElement("span"); tag.className = "word-syllable"; tag.textContent = `${item.reading} · ${item.tone} tone`; syllables.append(tag); }
+      const attribution = document.createElement("p"); attribution.textContent = `Source: ${word.source ?? "not found"}${word.confidence === null ? "" : ` · evidence status: ${word.confidence}`}`;
+      details.append(meaning, reading, syllables, attribution);
+      if (word.note) { const note = document.createElement("p"); note.textContent = word.note; details.append(note); }
+      if (word.example_thai && word.example_english) { const example = document.createElement("p"); example.lang = "th"; example.textContent = `Example: ${word.example_thai} · ${word.example_english}`; details.append(example); }
     });
     root.append(button);
   }
+  root.querySelector<HTMLButtonElement>(".word-chip")?.click();
 }
 
 function getThaiVoices(): SpeechSynthesisVoice[] {
@@ -200,8 +210,7 @@ source.value = localStorage.getItem(selectedKey) ?? "";
 speed.value = String(settings.speed);
 $<HTMLInputElement>("settings-speed").value = String(settings.speed);
 $<HTMLOutputElement>("speed-output").value = `${Number(settings.speed).toFixed(2).replace(/0$/, "")}×`;
-$<HTMLTextAreaElement>("meaning-note").value = settings.meaning;
-$<HTMLInputElement>("model-folder").value = settings.modelFolder;
+$<HTMLSelectElement>("translation-provider").value = settings.translationProvider;
 $<HTMLSelectElement>("hotkey-modifier").value = settings.hotkeyModifier;
 $<HTMLSelectElement>("hotkey-key").value = settings.hotkeyKey;
 renderShortcut();
@@ -224,14 +233,80 @@ $("stop-speech").addEventListener("click", () => {
   $("stop-speech").setAttribute("disabled", "true");
   $("voice-note").textContent = "Speech stopped.";
 });
-$("previous").addEventListener("click", () => { sentenceIndex = Math.max(0, sentenceIndex - 1); renderPassage(); });
-$("next").addEventListener("click", () => { sentenceIndex = Math.min(sentences.length - 1, sentenceIndex + 1); renderPassage(); });
-document.querySelectorAll<HTMLButtonElement>(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab ?? "characters")));
+$("previous").addEventListener("click", () => { sentenceIndex = Math.max(0, sentenceIndex - 1); renderSentence(analysis[sentenceIndex]); });
+$("next").addEventListener("click", () => { sentenceIndex = Math.min(analysis.length - 1, sentenceIndex + 1); renderSentence(analysis[sentenceIndex]); });
+document.querySelectorAll<HTMLButtonElement>(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab ?? "words")));
 $("settings-toggle").addEventListener("click", () => { settingsOpen = !settingsOpen; renderViews(); });
-$("save-meaning").addEventListener("click", () => { settings.meaning = $<HTMLTextAreaElement>("meaning-note").value; localStorage.setItem(settingsKey, JSON.stringify(settings)); renderPassage(); });
+$("translation-provider").addEventListener("change", () => {
+  settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
+  localStorage.setItem(settingsKey, JSON.stringify(settings));
+  $("provider-status").textContent = settings.translationProvider === "offline" ? "Offline examples and word lookup are local; no network is used." : "Translation is sent only to Ollama at 127.0.0.1 on this PC.";
+});
+$("refresh-models").addEventListener("click", () => { void refreshOllamaModels(); });
+$("test-offline").addEventListener("click", async () => {
+  $("engine-test-status").textContent = "Running segmentation and SQLite lookup…";
+  try {
+    const result = await invoke<SentenceCard[]>("analyze_text", { text: "เราเดินดูของหลายอย่าง ทั้งผัก ผลไม้ และอาหารพื้นบ้าน" });
+    const learned = result[0]?.words.filter(word => word.meaning && word.reading).length ?? 0;
+    if (result.length !== 1 || learned < 8 || !result[0]?.meaning) throw new Error("The expected Thai sample did not return sentence meaning plus at least eight dictionary word cards.");
+    $("engine-test-status").textContent = `Passed · ${result[0].words.length} words · ${learned} with meaning and reading · sentence meaning found.`;
+  } catch (error) { $("engine-test-status").textContent = `Failed: ${String(error)}`; }
+});
+$("test-voice").addEventListener("click", () => speak("สวัสดีครับ วันนี้อากาศดี"));
+$("open-mic-test").addEventListener("click", () => showTab("practice"));
+$("pull-model").addEventListener("click", async () => {
+  const button = $<HTMLButtonElement>("pull-model"); button.disabled = true;
+  $("provider-status").textContent = "Requesting the optional qwen3:1.7b model from local Ollama… This downloads a large model and may take time.";
+  try {
+    await invoke("pull_ollama_model", { model: "qwen3:1.7b" });
+    settings.translationModel = "qwen3:1.7b";
+    localStorage.setItem(settingsKey, JSON.stringify(settings));
+    await refreshOllamaModels();
+    $("provider-status").textContent = "qwen3:1.7b was downloaded by local Ollama. Select it and save settings to use it.";
+  } catch (error) { $("provider-status").textContent = String(error); }
+  finally { button.disabled = false; }
+});
+async function refreshOllamaModels(): Promise<void> {
+  const select = $<HTMLSelectElement>("translation-model");
+  select.replaceChildren();
+  try {
+    const models = await invoke<string[]>("ollama_models");
+    for (const model of models) select.add(new Option(model, model));
+    if (!models.length) select.add(new Option("No local models found", ""));
+    if (models.includes(settings.translationModel)) select.value = settings.translationModel;
+    $("provider-status").textContent = models.length ? `Local Ollama ready · ${models.length} model${models.length === 1 ? "" : "s"} found.` : "Ollama is running, but no local models are installed.";
+  } catch (error) { select.add(new Option("Ollama unavailable", "")); $("provider-status").textContent = String(error); }
+}
+$("translate-current").addEventListener("click", async () => {
+  const sentence = analysis[sentenceIndex];
+  if (!sentence) { $("translation-status").textContent = "Add Thai text first."; return; }
+  if (sentence.meaning && sentence.meaning_source?.startsWith("ThaiReader")) { $("translation-status").textContent = "An attributed offline sentence example is already shown."; return; }
+  if (settings.translationProvider !== "ollama" || !settings.translationModel) { $("translation-status").textContent = "Select Local Ollama and a model in Settings first."; return; }
+  const button = $<HTMLButtonElement>("translate-current"); button.disabled = true;
+  $("translation-status").textContent = "Translating on the local Ollama service…";
+  try {
+    sentence.meaning = await invoke<string>("translate_local", { text: sentence.text, model: settings.translationModel });
+    sentence.meaning_source = `Local Ollama (${settings.translationModel}) · machine translation`;
+    renderSentence(sentence);
+    $("translation-status").textContent = "Local model output shown. Check nuance before relying on it.";
+  } catch (error) { $("translation-status").textContent = `Local translation failed: ${String(error)}`; }
+  finally { button.disabled = false; }
+});
+$("save-correction").addEventListener("click", async () => {
+  try {
+    await invoke("save_correction", { word: $<HTMLInputElement>("correction-word").value, meaning: $<HTMLInputElement>("correction-meaning").value, reading: $<HTMLInputElement>("correction-reading").value || null, note: "Saved from PhasaForge Settings" });
+    $("correction-status").textContent = "Saved to the local SQLite knowledge base.";
+    renderPassage();
+  } catch (error) { $("correction-status").textContent = `Could not save: ${String(error)}`; }
+});
+$("refresh-dictionary").addEventListener("click", async () => {
+  try { $("dictionary-update-status").textContent = await invoke<string>("refresh_dictionary"); }
+  catch (error) { $("dictionary-update-status").textContent = `Dictionary update failed: ${String(error)}`; }
+});
 $("save-settings").addEventListener("click", async () => {
   settings.voice = $<HTMLSelectElement>("voice-select").value;
-  settings.modelFolder = $<HTMLInputElement>("model-folder").value.trim();
+  settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
+  settings.translationModel = $<HTMLSelectElement>("translation-model").value;
   settings.hotkeyModifier = $<HTMLSelectElement>("hotkey-modifier").value;
   settings.hotkeyKey = $<HTMLSelectElement>("hotkey-key").value;
   settings.speed = Number(speed.value);
@@ -279,7 +354,7 @@ async function startRecording(): Promise<void> {
     mediaRecorder.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => {
       $("practice-status").textContent = "Audio captured locally for this session. No Thai recognition engine is configured; no transcript or pronunciation score was generated.";
-      $("heard-text").textContent = "Recognition unavailable — configure a local speech model in a future build.";
+      $("heard-text").textContent = "Recognition unavailable — no Thai ASR backend is installed/configured.";
       stream?.getTracks().forEach(t => t.stop());
       stream = undefined;
       const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || "audio/webm" });
@@ -322,6 +397,7 @@ if ("__TAURI_INTERNALS__" in window) {
   }).catch(error => {
     $("voice-setup-note").textContent = "Windows native Thai voice discovery failed: " + String(error) + ". Install a Thai text-to-speech voice in Windows Settings.";
   });
+  void invoke<string>("database_location").then(path => { $<HTMLInputElement>("database-path").value = path; }).catch(error => { $<HTMLInputElement>("database-path").value = String(error); });
   void listen<{ text: string | null; rect: { x: number; y: number; width: number; height: number } | null; clipboard_restored: boolean | null }>("selection-captured", async event => {
     const capture = event.payload;
     if (capture.clipboard_restored === false) {

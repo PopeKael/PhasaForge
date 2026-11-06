@@ -25,8 +25,12 @@ jobs:
         run: npm ci
       - name: Validate frontend
         run: npm run build
+      - name: Run UI logic tests
+        run: npm run test:ui
       - name: Check Rust host
         run: cargo check --manifest-path src-tauri/Cargo.toml
+      - name: Run Rust language and desktop tests
+        run: cargo test --lib --manifest-path src-tauri/Cargo.toml
       - name: Build Windows installers
         run: npm run tauri build
       - name: Smoke-test NSIS current-user installation and uninstall

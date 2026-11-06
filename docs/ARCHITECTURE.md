@@ -1,19 +1,11 @@
 # Architecture
 
-## Current shape
-
-- **Rust host:** Tauri 2 owns the Windows process, tray menu and window lifecycle. A dedicated `WH_KEYBOARD_LL` callback tracks only the configured left/right modifier state and trigger. It queues capture work without waiting; unrelated keys pass through and only the configured trigger keydown/up is consumed.
-- **Selection capture:** A separate action thread reads UI Automation text and selection bounds before PhasaForge takes focus. If no selected text is exposed, an STA fallback snapshots the OLE clipboard data object, issues one Ctrl+C, reads Unicode text, and restores/flushed the prior data object. The UI reports if clipboard restoration fails. No clipboard polling runs at idle.
-- **Frontend:** Vite plus TypeScript and plain DOM/CSS. No frontend framework or remote runtime dependency. Windows system fonts are used.
-- **Persistence:** UI preferences and the user's meaning note use browser local storage in the app origin. No account or remote service is used.
-- **Speech:** The Windows WinRT speech synthesizer enumerates installed `th-*` voices, synthesizes locally, and passes the WAV stream to the WebView for playback. The Web Speech API is a fallback only for Thai voices. Microphone practice captures and replays a local audio blob for the session; recognition is not implemented.
-- **Placement:** Selection bounds or cursor coordinates are measured in desktop physical pixels. The window is positioned right/below when space allows, flips left/above when needed, and clamps to the nearest monitor work area without changing its size.
-- **Assets:** `assets/` preserves the supplied UI concept and master icon. `src-tauri/icons/` contains a generated ICO derived from the supplied icon; the artwork itself is unchanged.
-
-## Planned boundaries
-
-Define provider traits/modules before adding translation or ASR. Keep OS capture, clipboard handling, TTS, ASR and Thai linguistic analysis replaceable. ASR should be a child process or isolated backend with an explicit lifecycle, admission check and release path. Model files belong in a user-selected external folder, not in Git or the installer.
-
-## Idle and privacy invariants
-
-At idle, the process may own its tray and a narrow keyboard hook that checks only the configured shortcut, but it must not poll the clipboard, hold microphone access, or retain an ASR model. No source passage or audio is sent to a server in this build. Avoid logging selected user text or other keyboard input.
+- **Rust/Tauri host:** Owns the hidden/revealed window, tray and keyboard hook. `tauri-plugin-single-instance` is registered first; its activation callback reveals and focuses the existing main window.
+- **Hotkey:** The low-level hook only tracks configured modifier and trigger. On activation an action worker reads the selection first, then explicitly shows/focuses the window and emits the capture result. The frontend places it beside the selection/cursor, clamps it to the corresponding monitor work area, and displays captured text.
+- **Thai analysis:** `kham-core` provides offline sentence segmentation and newmm word segmentation. The vocabulary overlay is loaded from SQLite at startup. The English/romanization database lookup is separate from segmentation and separate from translation.
+- **SQLite:** `assets/learner.sqlite` is a generated subset of ThaiReader v42 (word entries, senses, examples, source rows), plus a clearly distinguished project-provided sample. On first launch the app copies it to the platform app-data folder as `phasaforge.sqlite` and creates a separate `corrections` table. User data therefore survives installer upgrades. Regenerate the bundled seed with `python scripts/build_learner_db.py` after changing the attributed TSV snapshot.
+- **Translation:** Offline exact example match is the default. The optional Ollama provider uses native Rust HTTP requests only to the fixed loopback host `127.0.0.1:11434`. `api/tags` lists installed models, `api/pull` downloads the user-selected optional model, and `api/generate` translates only after the user presses the translation button. No text is sent to Thai2English or another remote provider.
+- **Speech:** Windows WinRT lists and synthesizes with installed Thai TTS voices; the Web Speech fallback is filtered to Thai only. Microphone practice records and replays a browser media blob and releases microphone tracks on stop. There is no ASR backend, transcript, or pronunciation score in this release.
+- **Frontend:** Vite, TypeScript and plain DOM/CSS. The Settings view is an internal scrollable page. User-facing messages expose unavailable providers and missing data instead of silently substituting content.
+- **Window placement:** Existing physical-pixel monitor/work-area calculation is retained. The custom title bar remains draggable; fixed dimensions match the 640×480 concept.
+- **Assets/data:** UI artwork is the supplied project artwork. The learner data license is separate from MIT app source and is reproduced in `reference-data/thaireader-v42/THAI-LEXICON-LICENSE.md`. No media-library files are included.

@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod hotkey;
+mod language;
 mod selection;
 mod speech;
 
@@ -30,28 +31,38 @@ fn set_hotkey(modifier: String, key: String) -> Result<(), String> {
 
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .setup(|app| {
-            if let Err(error) = hotkey::start(app.handle().clone()) {
-                eprintln!("Could not install the Right Ctrl + Up listener; PhasaForge remains available from its tray: {error}");
-            }
-            let open = MenuItem::with_id(app, "open", "Open PhasaForge", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &quit])?;
-            let mut tray = TrayIconBuilder::new().menu(&menu).tooltip("PhasaForge");
-            if let Some(icon) = app.default_window_icon() {
-                tray = tray.icon(icon.clone());
-            }
-            tray.on_menu_event(|app, event| match event.id().as_ref() {
-                "open" => {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+            app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
+            let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
+            if !test_mode {
+                if let Err(error) = hotkey::start(app.handle().clone()) {
+                    eprintln!("Could not install the Right Ctrl + Up listener; PhasaForge remains available from its tray: {error}");
                 }
-                "quit" => app.exit(0),
-                _ => {}
-            })
-            .build(app)?;
+                let open = MenuItem::with_id(app, "open", "Open PhasaForge", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open, &quit])?;
+                let mut tray = TrayIconBuilder::new().menu(&menu).tooltip("PhasaForge");
+                if let Some(icon) = app.default_window_icon() {
+                    tray = tray.icon(icon.clone());
+                }
+                tray.on_menu_event(|app, event| match event.id().as_ref() {
+                    "open" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "quit" => app.exit(0),
+                    _ => {}
+                })
+                .build(app)?;
+            }
 
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.on_window_event(|event| {
@@ -62,7 +73,9 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai])
+        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai,
+            language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
+            language::ollama_models, language::pull_ollama_model, language::translate_local])
         .build(tauri::generate_context!())
         .expect("PhasaForge failed to start");
     app.run(|_, event| {

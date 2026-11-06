@@ -48,48 +48,64 @@
 
         <nav id="tabs" class="tabs" role="tablist" aria-label="Learning views">
           <button data-tab="meaning" class="tab" role="tab" aria-selected="false">Meaning</button>
-          <button data-tab="characters" class="tab active" role="tab" aria-selected="true">Characters</button>
+          <button data-tab="words" class="tab active" role="tab" aria-selected="true">Words</button>
           <button data-tab="practice" class="tab" role="tab" aria-selected="false">Practice</button>
         </nav>
 
         <section class="tab-content" id="meaning-view" hidden>
           <h2>Meaning</h2>
-          <p class="muted">A translation provider has not been configured. PhasaForge will not invent a meaning. Add your own note below, or connect an offline translation provider in a later build.</p>
-          <textarea id="meaning-note" placeholder="Your meaning or notes for this passage…"></textarea>
-          <button id="save-meaning" class="secondary-button small">Save note</button>
+          <p id="translation-source" class="muted">Exact offline example matches and their sources are shown here. Other sentences are not silently guessed.</p>
+          <p class="muted">Choose a local Ollama model in Settings to translate new sentences on this PC. Model output is labelled as machine translation.</p>
+          <button id="translate-current" class="secondary-button small">Translate current sentence locally</button>
+          <span id="translation-status" class="muted"></span>
         </section>
 
-        <section class="tab-content characters-view" id="characters-view">
-          <div id="character-chips" class="character-chips"><span class="muted">Thai characters will appear here.</span></div>
-          <div class="character-card">
-            <div class="character-large" id="character-large">ภ</div>
-            <div class="character-details" id="character-details"><strong>Written component</strong><p>Select a component above to see its Unicode character and a conservative script-level description.</p></div>
+        <section class="tab-content words-view" id="words-view">
+          <div id="word-chips" class="word-chips"><span class="muted">Thai words will appear here.</span></div>
+          <div class="word-card">
+            <div class="word-large" id="word-large">คำ</div>
+            <div class="word-details" id="word-details"><strong>Select a word</strong><p>Its dictionary meaning, syllables, tones, and source will appear here.</p></div>
           </div>
         </section>
 
         <section class="tab-content practice-view" id="practice-view" hidden>
           <div class="practice-actions"><button id="record" class="primary-button">● <span>Record</span></button><button id="stop-record" class="secondary-button" disabled>■ <span>Stop</span></button><button id="play-recording" class="secondary-button" disabled>▶ <span>Replay</span></button><button id="record-again" class="secondary-button" disabled>↻ <span>Record Again</span></button></div>
-          <div id="practice-status" role="status">Microphone is idle. Recording stays on this device; Thai recognition and pronunciation scoring are not available.</div>
+          <div id="practice-status" role="status">Microphone is idle. Recording stays on this device. Thai transcription is only available when a supported local recognizer is configured.</div>
           <div class="heard-label">What the recogniser heard</div><div id="heard-text" class="heard-text">—</div>
           <p class="muted small-copy">Speech recognition feedback is not pronunciation grading. A transcription match alone cannot verify tones or pronunciation.</p>
         </section>
 
         <section class="tab-content settings-view" id="settings-view" hidden>
           <h2>Settings</h2>
+          <h3>Thai text and translation</h3>
+          <label class="setting-row">Translation provider<select id="translation-provider"><option value="offline">Offline examples (no network)</option><option value="ollama">Local Ollama model</option></select></label>
+          <label class="setting-row">Ollama model<select id="translation-model"><option value="">Check local models…</option></select></label>
+          <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download qwen3:1.7b</button></div>
+          <p id="provider-status" class="muted" role="status">Offline mode uses the bundled Thai learner examples and dictionary. No Internet service is called.</p>
+          <div class="setting-actions"><button id="test-offline" class="secondary-button small">Test offline Thai engine</button><span id="engine-test-status" class="muted" role="status"></span></div>
+          <h3>Local knowledge base</h3>
+          <label class="setting-row">SQLite file <input id="database-path" type="text" readonly /></label>
+          <button id="refresh-dictionary" class="secondary-button small">Refresh bundled Thai data</button><span id="dictionary-update-status" class="muted" role="status"></span>
+          <label class="setting-row">Correct a word <input id="correction-word" type="text" lang="th" placeholder="Thai word" /></label>
+          <label class="setting-row">Meaning <input id="correction-meaning" type="text" placeholder="Your meaning" /></label>
+          <label class="setting-row">Paiboon+ reading <input id="correction-reading" type="text" placeholder="Optional; e.g. sà-wàt-dee" /></label>
+          <button id="save-correction" class="secondary-button small">Save local correction</button><span id="correction-status" class="muted"></span>
+          <h3>Thai playback</h3>
           <label class="setting-row">Shortcut modifier<select id="hotkey-modifier"><option value="right_ctrl">Right Ctrl</option><option value="left_ctrl">Left Ctrl</option><option value="right_alt">Right Alt</option><option value="left_alt">Left Alt</option></select></label>
           <label class="setting-row">Shortcut key<select id="hotkey-key"><option value="up">Up Arrow</option><option value="down">Down Arrow</option><option value="space">Space</option></select></label>
           <p class="muted" id="hotkey-status">Only the chosen shortcut is used; unrelated keys pass through. No other keyboard input is stored.</p>
           <label class="setting-row">Thai voice<select id="voice-select"><option value="">No Thai voice detected</option></select></label>
+          <button id="test-voice" class="secondary-button small">Test Thai voice</button>
           <p class="muted" id="voice-setup-note">Install Thai under Windows Settings → Time &amp; language → Language &amp; region → Thai → Language options, then add Text-to-speech if offered. Narrator Settings also offers Add voices on supported systems.</p>
           <label class="setting-row">Thai playback speed<input id="settings-speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /></label>
-          <label class="setting-row">Speech model folder<input id="model-folder" type="text" placeholder="Not configured" /></label>
-          <p class="muted">Local recognition and model memory admission are not implemented yet.</p>
-          <label class="setting-row check-row"><input id="launch-login" type="checkbox" disabled /> Launch at Windows sign-in (not implemented)</label>
+          <h3>Speech recognition</h3>
+          <p id="asr-status" class="muted">Thai offline recognition is not configured. Recording and replay remain available; no transcript or score is fabricated.</p>
+          <button id="open-mic-test" class="secondary-button small">Open microphone recording test</button>
           <div class="setting-actions"><button id="save-settings" class="primary-button">Save Settings</button><span id="settings-saved" class="muted"></span></div>
         </section>
         <audio id="recorded-audio" hidden></audio>
       </main>
-      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.1.1</span></footer>
+      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.2.0</span></footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

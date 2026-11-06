@@ -1,28 +1,28 @@
 # Product specification
 
-## Purpose
+## 0.2.0 teaching scope
 
-PhasaForge is a free, standalone Windows 11 Thai-learning companion. The user selects or enters Thai text and studies the passage through speech, meaning, written components, and optional practice. The application must be patient and user-controlled, not a forced-progression course.
+PhasaForge is a free, standalone Windows Thai-learning popup. Its 640×480 window keeps the captured source text, current sentence, playback controls, and Meaning / Words / Practice views in one place. The media library at `D:\Music\Thai Language` is reference-only.
 
-## Approved experience
+### Teaching flow
 
-Use the supplied 640 × 480 compact popup concept and final PhasaForge icon as authoritative visual references. Keep the source passage scrollable, current sentence focused, and Meaning / Characters / Practice views simple. The supplied media collection is reference material only and must not be copied into the app.
+1. Khám (Rust) splits Thai sentences and words offline. The 5,111-entry learner vocabulary is merged into the segmenter to favor useful dictionary units.
+2. Each word is looked up in the local SQLite knowledge base for Paiboon+ spelling, syllable boundaries, tone labels, sense, editorial note, source and confidence. User corrections are stored separately from the bundled source data and take precedence.
+3. Sentence meaning appears when an exact authored example is present. Otherwise, an optional translation action can call an already-running Ollama server on `127.0.0.1`; its output is visibly identified as machine translation. Offline mode never invents a sentence translation.
+4. Thai speech uses an installed Thai system voice. Recording and replay are kept local to the session.
 
-## Product requirements
+ThaiReader v42 is the dictionary/example source; its senses are carefully drafted and mechanically checked but not individually line-edited. Meanings remain attributable and confidence is displayed. Paiboon+ tone-marked readings are split at their source hyphens; tone names follow their romanization diacritics.
 
-- Default activation intent: Right Ctrl + Up. It must be configurable and distinguish right Ctrl where feasible.
-- Preserve Unicode Thai text and the complete selected passage. Capture should use UI Automation where reliable, then a clipboard-copy fallback that restores prior clipboard formats.
-- Show a compact, movable, resizable, DPI-aware popup near the selection or cursor and keep it inside the usable monitor area.
-- Segment long passages into passages and sentences without truncation. Preserve the selected unit and scroll location when switching views.
-- Thai TTS is required. Use an installed local Thai voice first. Never silently speak Thai text with an English voice. Speed range is 0.5×–1.0× and should preserve pitch.
-- Character explanations must respect Thai grapheme clusters and syllable context. Label uncertain analysis as uncertain; do not treat each visible mark as a separate sound.
-- Practice should load a local Thai-capable ASR model on demand, enforce estimated peak runtime memory plus 200 MB headroom, then release it. Transcription is not pronunciation grading.
-- No mandatory login, subscription, local LLM, continuous clipboard polling, microphone activity at idle, or permanently resident ASR model.
-- Keep providers replaceable and settings local. Model storage is separately configurable.
-- Ship a versioned Windows installer and signed update artifacts only after key management and private release delivery are actually configured.
+## Desktop requirements
 
-## 0.1.1 recovery scope
+- The default Right Ctrl + Up activation captures text while the source app still has focus, then reveals and focuses the reusable popup. A second launch focuses the existing instance.
+- UI Automation selection capture precedes a one-shot clipboard fallback that restores the prior OLE data object.
+- Placement uses selection bounds or cursor and clamps inside the nearest monitor work area; title-bar dragging and tray Open/Quit remain.
+- No mandatory account, subscription, local model, network translation, clipboard polling, or microphone activation at idle.
+- Translation provider is user-selectable: offline examples (default) or local Ollama. The Ollama endpoint is fixed to loopback. No Thai2English request or scraping is performed.
+- Thai TTS never falls back to English. If no Thai voice is available, playback reports that accurately.
+- Microphone recording and replay remain; Thai ASR and pronunciation scoring are not part of 0.2.0. The Settings page reports this limitation.
 
-This build fixes single-tab visibility, the compact 640 × 480 layout, separate Settings navigation, draggable title bar, close-to-tray controls, Windows-native Thai voice discovery and synthesis, local recording playback, and selection/cursor-aware work-area placement. The non-blocking hotkey reads UI Automation text and bounds, then falls back to a one-shot Ctrl+C while restoring the OLE clipboard data object. Regression checks cover tab state, monitor-edge placement and left/right modifier normalization.
+## Later work requiring separate acceptance
 
-The installed Thai voice list and real audio still require live verification on a machine with an installed Thai TTS voice. Physical-key activation, selection capture in representative Opera/editor controls, multiple monitors and mixed DPI also need desktop acceptance. Translation, authoritative romanisation, real ASR, resource admission, autostart, signing and an updater remain unimplemented.
+Thai offline speech recognition, pronunciation scoring, signing/update delivery, and independent live multi-monitor/DPI verification are not claimed as 0.2.0 features. The Windows `SpeechRecognizer` API requires package identity and some topic grammars use a web service; this project currently builds an unpackaged NSIS installer. See [Acceptance Tests](ACCEPTANCE_TESTS.md).

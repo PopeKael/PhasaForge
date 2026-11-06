@@ -1,21 +1,19 @@
-# Dependencies and reuse review
+# Dependencies and reuse review — 0.2.0
 
-## Current dependencies
-
-| Package | Purpose | Licence / review |
+| Component | Use | Notes |
 |---|---|---|
-| Tauri 2 (`tauri`, `tauri-build`) | Rust desktop host and Windows bundling | Tauri ecosystem licensing; verify the resolved crate notices before release. |
-| `windows-sys` | Narrow Windows low-level keyboard hook and tray/window APIs | Microsoft Windows bindings; verify the resolved crate notice before release. The hook checks only the selected modifier/key and calls the next hook without suppressing input. |
-| `windows` | Windows UI Automation COM interfaces for reading the focused control's text selection | Microsoft Windows bindings; used only on activation, on a dedicated MTA action thread. |
-| Vite, TypeScript, `@tauri-apps/api` | Local frontend build and IPC | Verify exact resolved notices with the lockfiles before release. |
+| [kham-core 0.8.2](https://docs.rs/kham-core/0.8.2/kham_core/) | Native Rust Thai sentence and word segmentation | MIT OR Apache-2.0 source; the crate's compiled dictionary is CC0. PhasaForge adds the ThaiReader learner vocabulary at startup. Tested on Thai compound and example sentences. |
+| [ThaiReader learner list v42](https://thaireader.app/words/downloads) | Thai headwords, senses, Paiboon+ readings, and original English example sentences | CC BY-SA 4.0. Source TSVs and complete upstream README retained in `reference-data/thaireader-v42`; app database derivative is CC BY-SA 4.0. Full notices: `THAI-LEXICON-LICENSE.md`. Dictionary sense quality is explicitly treated as draft. |
+| rusqlite 0.37 (`bundled`) | Local SQLite persistence | MIT; bundled SQLite library notices remain in the Cargo dependency tree. Corrections are stored in a distinct table. |
+| reqwest 0.12 (Rustls) | Local-only Ollama API client | The app hard-codes loopback `127.0.0.1:11434`; no remote translation endpoint is configurable. |
+| tauri-plugin-single-instance 2.5.5 | Windows one-process activation | MIT/Apache-2.0; activation callback reveals/focuses the existing window. |
+| Tauri 2, Windows bindings, Vite, TypeScript | Desktop lifecycle, WinRT TTS, selection capture, UI and packaging | Resolved versions and complete notices are represented in `Cargo.lock` and `package-lock.json`. |
 
-## Candidate projects reviewed
+## Reuse and provider decisions
 
-- [Tauri 2](https://v2.tauri.app/start/) fits a small Rust host with a web UI. Windows installer output supports MSI and NSIS; the Tauri updater requires signing configuration and a reachable endpoint.
-- [OpenTranslate](https://github.com/stenastena/opentranslate) documents the selected-text workflow: reuse one popup, send Ctrl+C only on demand, and restore the clipboard afterward. It is Apache-2.0, so no code was copied; PhasaForge still needs a careful Windows capture implementation and clipboard-format tests.
-- [Pot](https://github.com/pot-app/pot-desktop) demonstrates selection translation and popup patterns, but is GPL-3.0 and the repository is archived. It is not a dependency and no code was copied.
-- [kham](https://github.com/preedep/kham) is a Rust Thai segmentation engine with MIT/Apache-2.0 code and a CC0 word list. It is a promising future dependency, but its current release/API and output quality need project-specific verification before integration.
-- [whisper.cpp](https://github.com/ggml-org/whisper.cpp) is an MIT-licensed C/C++ Whisper implementation with CPU and multiple accelerated paths. It is a candidate for a local recognizer; no binaries or model files are bundled and no ASR integration has been completed.
-- `cunba-ai/hytrans` and `HeisenbergFiles/thai-translate-learn-bot` have not yet had a sufficiently verified licence, maintenance and API review. Nothing from them is used.
-
-No third-party course files, external models, or reference-project source code are included. `DEPENDENCIES.md` must be revisited against `package-lock.json` and `Cargo.lock` before distribution.
+- **Thai2English:** The official site is a useful presentation benchmark for word-by-word meaning, readings, examples and audio. Its public pages reviewed for 0.2.0 did not expose API documentation or a documented API license; PhasaForge does not scrape its pages, call undocumented endpoints, or bundle its content. This is a finding from the public site review, not a claim that no private or partner API exists.
+- **`thai2english-nlp`:** The npm package returns 404 and the registry reports it unpublished since 2021-03-18; it cannot be installed as a project dependency.
+- **PyThaiNLP:** Its Python tools cover Thai sentence/word/syllable segmentation and transliteration, but adding an embedded Python runtime is unnecessary for this compact Windows shell. `kham-core` provides a native offline segmenter; ThaiReader provides learner readings/syllable boundaries. PyThaiNLP itself is not bundled.
+- **Translation:** Offline exact learner-example lookup is the default. A user may install Ollama and download `qwen3:1.7b` (Apache 2.0 per its model-card metadata) or another local model. Model translation is clearly labelled and optional; there is no paid/remote backend. No model is bundled, downloaded automatically, or represented as a verified translation engine.
+- **ASR:** No offline recognizer is bundled. The Windows `SpeechRecognizer` route was not used: current Microsoft docs say those APIs require MSIX package identity, while this app ships unpackaged NSIS. Windows' topic grammar can also call a web service, contrary to offline-first expectations. See [Microsoft's language guidance](https://learn.microsoft.com/en-us/windows/apps/develop/input/specify-the-speech-recognizer-language). A separately packaged local Whisper implementation needs its own dependency, model license/storage review, memory/load/unload checks, and acceptance test.
+- **Reference media:** `D:\Music\Thai Language` was inventoried only. No course files, video/audio samples, subtitles, transcripts or compressed packs were imported or redistributed.

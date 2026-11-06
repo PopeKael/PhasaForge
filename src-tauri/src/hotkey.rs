@@ -87,6 +87,11 @@ pub fn start(app: AppHandle) -> Result<(), String> {
                 wait_for_modifier_release();
                 let captured = selection::selected_text();
                 if let Some(window) = app.get_webview_window("main") {
+                    // Capture first (while the source application still owns focus),
+                    // then reveal the reusable popup even if the frontend listener
+                    // is recovering from a hidden WebView event delay.
+                    let _ = window.show();
+                    let _ = window.set_focus();
                     let _ = window.emit("selection-captured", captured);
                 }
             }

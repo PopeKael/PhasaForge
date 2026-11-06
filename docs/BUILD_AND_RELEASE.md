@@ -2,23 +2,28 @@
 
 ## Local Windows build
 
-Required: Windows 11 x64, stable Rust MSVC toolchain, Node.js/npm, Microsoft C++ Build Tools, and WebView2. See the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+Prerequisites: Windows 11 x64, stable Rust MSVC toolchain, Node.js/npm, Microsoft C++ Build Tools, and WebView2.
 
 ```powershell
-npm install
+npm ci
 npm run build
-cargo check --manifest-path src-tauri/Cargo.toml
-npm run tauri build
+npm run test:ui
+cargo test --manifest-path src-tauri/Cargo.toml
+npm run tauri build -- --bundles nsis
 ```
 
-Tauri's Windows bundler supports MSI and NSIS installers; this project selects both. Output is under `src-tauri/target/release/bundle/`. The release workflow also keeps a copy of the executable and NSIS installer under the ignored `release-artifacts/` folder for local testing.
+`scripts/build_learner_db.py` verifies every present upstream data file against its published SHA256 manifest and rebuilds `assets/learner.sqlite` from the retained, attributed TSV sources. App code is MIT; the derived learner-data portion has its separate CC BY-SA notice.
+
+The versioned local 0.2.0 deliverables are under `release-artifacts/0.2.0/`: `PhasaForge.exe`, `PhasaForge_0.2.0_x64-setup.exe`, and UI verification screenshots. These local binaries are ignored by Git; the source and release instructions are committed. The installers are unsigned.
+
+## Installer smoke test
+
+The Windows CI workflow installs the current-user NSIS package silently, verifies its executable and uninstaller registration, uninstalls it silently, and checks cleanup. The 0.2.0 package received the same local isolated install/uninstall check. The app window was not launched during that check.
 
 ## CI
 
-`.github/workflows/windows.yml` builds and uploads Windows installer artifacts on pushes and pull requests. Tagged `v*` builds attach installers to a GitHub prerelease only after the repository has been created and GitHub authentication configured. The workflow never changes repository visibility.
+`.github/workflows/windows.yml` runs the TypeScript build and UI logic tests, Rust check/tests, builds Windows installers, and smoke-tests NSIS install/uninstall. It uploads build artifacts on main, pull requests and manual runs. Tagged `v*` builds attach unsigned installers to a private prerelease only after the repository has been created and GitHub authentication configured. The workflow never changes repository visibility.
 
 ## Update status and signing
 
-There is no active updater in 0.1.1. The repository has no signing key and no configured private update endpoint. Keep the repository private. Before enabling Tauri updater artifacts, generate a key outside Git, store the private key and password only as protected GitHub Actions secrets, configure the public key in the app, and provide a private-test endpoint accessible to intended users. Private GitHub Releases do not provide an unauthenticated updater feed. Public release remains an explicit product decision.
-
-The current workflow creates unsigned test installers. Do not describe them as production signed releases or as exercising the update process.
+There is no active updater, signing key, or private update endpoint. Keep the repository private. Before enabling updater artifacts, generate a key outside Git, store the private key/password only as protected GitHub Actions secrets, configure the public key in the app, and provide a private-test endpoint. Private GitHub Releases do not provide an unauthenticated updater feed. Public release remains an explicit product decision.
