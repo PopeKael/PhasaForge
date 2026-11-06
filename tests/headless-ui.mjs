@@ -86,7 +86,7 @@ try {
   assert.equal(home.width, 640); assert.equal(home.height, 480); assert.equal(home.tab, "Words");
   assert.equal(home.characters, false, "the retired Characters panel must not remain in the UI");
   assert.ok(Math.abs(home.app.width - 640) < 1 && Math.abs(home.app.height - 480) < 1, "app shell should fit the 640×480 viewport");
-  const out = join(root, "release-artifacts", "0.2.1", "ui-verification"); await mkdir(out, { recursive: true });
+  const out = join(root, "release-artifacts", "0.2.2", "ui-verification"); await mkdir(out, { recursive: true });
   const capture = async name => { const shot = await page.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }); await writeFile(join(out, name), Buffer.from(shot.data, "base64")); };
   await capture("words-640x480.png");
   const settings = await evaluate("document.querySelector('#settings-toggle').click(); ({hidden:document.querySelector('#settings-view').hidden,scrollHeight:document.querySelector('#settings-view').scrollHeight,clientHeight:document.querySelector('#settings-view').clientHeight,provider:!!document.querySelector('#translation-provider'),test:!!document.querySelector('#test-offline')})");

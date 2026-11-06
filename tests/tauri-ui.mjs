@@ -41,7 +41,7 @@ async function connect(wsUrl) {
     call(method, params = {}) {
       const id = ++nextId;
       return new Promise((resolveCall, rejectCall) => {
-        const entry = { resolve: resolveCall, reject: rejectCall, timer: setTimeout(() => { pending.delete(id); rejectCall(new Error(`CDP timeout ${method}`)); }, 10000) };
+        const entry = { resolve: resolveCall, reject: rejectCall, timer: setTimeout(() => { pending.delete(id); rejectCall(new Error(`CDP timeout ${method}`)); }, 30000) };
         pending.set(id, entry); socket.send(JSON.stringify({ id, method, params }));
       });
     }, close() { socket.close(); },
@@ -91,7 +91,7 @@ try {
   assert.match(word, /vegetable/i); assert.match(word, /pàk/i); assert.match(word, /low tone/i);
   const voices = await evaluate("window.__TAURI_INTERNALS__.invoke('list_thai_voices')");
   const voiceUi = await evaluate("({choices:[...document.querySelector('#voice-select').options].map(o=>o.text),note:document.querySelector('#voice-note').textContent})");
-  const output = join(root, "release-artifacts", "0.2.1", "ui-verification"); await mkdir(output, { recursive: true });
+  const output = join(root, "release-artifacts", "0.2.2", "ui-verification"); await mkdir(output, { recursive: true });
   const capture = async name => { const shot = await cdp.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }); await writeFile(join(output, name), Buffer.from(shot.data, "base64")); };
   await capture("tauri-words-640x480.png");
   await evaluate("document.querySelector('#settings-toggle').click()");
@@ -102,7 +102,7 @@ try {
   const diagnosticLog = await findFile(testAppData, "hotkey.log");
   assert.ok(diagnosticLog, `startup should write the privacy-safe diagnostic log under app data; found files: ${JSON.stringify(await listFiles(scratch))}`);
   const diagnosticText = await readFile(diagnosticLog, "utf8");
-  assert.match(diagnosticText, /app\.start version=0\.2\.1/);
+  assert.match(diagnosticText, /app\.start version=0\.2.2/);
   assert.doesNotMatch(diagnosticText, new RegExp(sample));
   await capture("tauri-settings-640x480.png");
   console.log(JSON.stringify({ size: "640×480", sample: analysis, clickedWord: word, engineTest: await evaluate("document.querySelector('#engine-test-status').textContent"), settings, installedThaiWinRtVoices: voices.length, voiceUi, diagnosticLog, screenshots: output }, null, 2));

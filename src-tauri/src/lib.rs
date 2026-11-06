@@ -41,7 +41,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
             let log_path = diagnostics::app_log_path(app.handle());
-            diagnostics::log(log_path.as_deref(), "app.start version=0.2.1");
+            diagnostics::log(log_path.as_deref(), "app.start version=0.2.2");
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
             if !test_mode {
                 if let Err(error) = hotkey::start(app.handle().clone()) {

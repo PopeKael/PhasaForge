@@ -4,6 +4,7 @@ import { distanceToWorkArea, placeNearAnchor } from "./placement.mjs";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { lessonViewState } from "./view-state.mjs";
+import { captureNotice, capturedSourceText } from "./capture-state.mjs";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -398,22 +399,13 @@ if ("__TAURI_INTERNALS__" in window) {
     $("voice-setup-note").textContent = "Windows native Thai voice discovery failed: " + String(error) + ". Install a Thai text-to-speech voice in Windows Settings.";
   });
   void invoke<string>("database_location").then(path => { $<HTMLInputElement>("database-path").value = path; }).catch(error => { $<HTMLInputElement>("database-path").value = String(error); });
-  void listen<{ text: string | null; rect: { x: number; y: number; width: number; height: number } | null; clipboard_restored: boolean | null }>("selection-captured", async event => {
+  void listen<{ text: string | null; rect: { x: number; y: number; width: number; height: number } | null; clipboard_restored: boolean | null; source: string; clipboard_status: string }>("selection-captured", async event => {
     const capture = event.payload;
-    if (capture.clipboard_restored === false) {
-      $("capture-status").textContent = "The saved clipboard could not be fully restored. Please check it.";
-    } else if (capture.clipboard_restored === true) {
-      $("capture-status").textContent = "Text captured with a temporary copy; the original clipboard was restored.";
-    } else if (capture.text) {
-      $("capture-status").textContent = "Text captured through Windows UI Automation.";
-    } else {
-      $("capture-status").textContent = "No selection found. The popup opened near the cursor.";
-    }
-    if (capture.text) {
-      source.value = capture.text;
-      sentenceIndex = 0;
-      renderPassage();
-    }
+    // A failed/empty capture replaces the previous source; never imply stale text was newly selected.
+    source.value = capturedSourceText(capture);
+    sentenceIndex = 0;
+    renderPassage();
+    $("capture-status").textContent = captureNotice(capture);
     const cursor = await cursorPosition();
     const anchor = capture.rect ?? { x: cursor.x, y: cursor.y, width: 0, height: 0 };
     const monitors = await availableMonitors();

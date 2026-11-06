@@ -29,6 +29,18 @@ See [Issue #4 analysis](ISSUE_4.md) for WER evidence and the confirmed hotkey cl
 | Clipboard safety policy | Passed | Rust regression tests accept empty/text-only clipboard snapshots and reject unsupported or multi-format clipboard contents before Ctrl+C. Thai text encodes/decodes as UTF-16 with the required terminator. They do not touch the interactive clipboard. |
 | Crash-path removal | Passed by source review | Selection capture no longer calls `OleGetClipboard`, `OleSetClipboard`, or `OleFlushClipboard`. The replacement uses Win32 clipboard handles for the narrow text-only case. |
 | Diagnostics | Passed | Hidden Tauri UI test confirms app-data `hotkey.log` is created and startup version is recorded without the sample text. |
+
+## Issue #6 corrective release — 0.2.2
+
+| Check | Result | Evidence |
+|---|---|---|
+| Hotkey log diagnosis | Confirmed | The saved Opera attempts reached UIA focused-element lookup, failed to obtain a TextPattern on that leaf, then skipped clipboard fallback because multiple formats were present. The old `false` restoration flag was a reporting conflation; no restore had been attempted. |
+| UIA implementation | Source and build verified | Focused element plus up to 16 Control View ancestors are checked for TextPattern. Queries run on a dedicated MTA worker. No selected text is logged. |
+| Clipboard safety and status | Passed | Existing Rust tests reject multiple/unsupported clipboard formats. UI tests verify a skipped fallback is not described as a restoration failure and an actual `false` restore result is reported separately. No interactive clipboard was used. |
+| Stale source regression | Passed | A null capture converts to an empty source string; the previous Thai passage cannot remain displayed as the new selection. |
+| Rust and frontend tests | Passed | 9 Rust unit tests and 5 frontend tests passed. TypeScript/Vite build and hidden Tauri/WebView UI checks passed for 640×480 rendering, 12 Thai word cards and scrollable Settings. |
+| 0.2.2 NSIS installer | Passed, silent | Installed to a fresh TEMP directory, confirmed `phasaforge.exe`, `uninstall.exe`, and DisplayVersion 0.2.2, then uninstalled with exit 0 and verified the files and registration were removed. The app was not launched. |
+| Opera hotkey end-to-end | Not run | The hidden WebView did not expose its selected range while non-foreground. Testing the actual Opera selection would take focus or use the interactive clipboard, so it was not performed. The log-grounded repair is not represented as a foreground Opera verification. |
 | Opera-specific hotkey end-to-end | Not exercised | No user-desktop keypress, visible browser, or clipboard mutation was performed. WER and source evidence identify the repaired path; regression tests exercise the protective policy without using the user's active desktop. |
 
 ## Desktop interactions not exercised

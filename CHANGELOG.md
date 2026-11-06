@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.2 — Opera selection capture recovery
+
+- Query up to 16 Control View ancestors for UI Automation TextPattern selections, with diagnostic control-type/depth data and no text content in logs.
+- Run UI Automation work on a dedicated MTA worker so calls remain valid if the invoking thread uses a different COM apartment.
+- Distinguish clipboard fallback skips from actual restoration failures in native results and the UI.
+- Clear the prior passage on any capture with no new text, preventing stale text from appearing as a fresh selection.
+- Add regression coverage for stale text clearing and skip-versus-restore messaging. Opera-specific hotkey activation was not exercised against the foreground desktop.
+- See [Issue #6 evidence and limits](docs/ISSUE_6.md).
+
 ## 0.2.1 — Opera selection crash repair
 
 - Fixed the reported Opera crash in selection fallback: WER recorded `ole32.dll` with exception `0xC000041D` twice. Removed restoration through a foreign OLE clipboard data object and `OleFlushClipboard`, which can invoke delayed-render callbacks into the source application.
