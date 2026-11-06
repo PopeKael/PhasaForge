@@ -11,17 +11,18 @@ button { cursor: pointer; }
 .icon-button { width: 34px; height: 31px; background: transparent; border: 0; border-radius: 6px; font-size: 17px; }
 .icon-button:hover { background: #ffffff18; } #close:hover { background: #bd3943; }
 main { padding: 6px 9px 4px; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
-.source-row { display: grid; grid-template-columns: 1.55fr .95fr; gap: 7px; min-height: 116px; height: 116px; flex: none; }
+.source-row { display: grid; grid-template-columns: 1.55fr .95fr; gap: 7px; min-height: 101px; height: 101px; flex: none; }
 .source-panel, .audio-panel, .focus-panel, .tab-content, .character-card { border: 1px solid #42676b; background: linear-gradient(145deg,#10292d,#091d21); border-radius: 11px; }
 .source-panel { display: flex; flex-direction: column; padding: 7px 9px; min-width: 0; overflow: hidden; }
 .section-label { font-weight: 700; margin-bottom: 5px; font-size: 13px; }
 .capture-status { min-height: 10px; color: #8fb4b5; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #source-text { width: 100%; height: 100%; min-height: 0; resize: none; border: 0; outline: 0; background: transparent; overflow: auto; line-height: 1.55; font-size: 15px; padding: 1px 3px 1px 0; }
 #source-text::placeholder { color: #8aa4a6; }
-.audio-panel { padding: 5px 6px; display: flex; flex-direction: column; justify-content: center; gap: 4px; min-width: 0; overflow: hidden; }
+.audio-panel { padding: 4px 5px; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; }
 .play-row { display: grid; grid-template-columns: .82fr 1.35fr .65fr; gap: 3px; min-width: 0; }
 .primary-button, .secondary-button { border-radius: 8px; min-height: 29px; padding: 3px 5px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; font-size: 11px; }
 .play-row button { min-width: 0; }
+.play-row #play-selection, .play-row #play-current { height: 26px; min-height: 26px; align-self: center; padding: 2px 3px; font-size: 10px; }
 .play-row #play-current { white-space: normal; line-height: 1.08; }
 .stop-button { min-width: 0; }
 .primary-button { border: 1px solid #11c6c1; background: linear-gradient(145deg,#007a7d,#004e54); box-shadow: inset 0 0 13px #00d3c533; font-weight: 700; }
@@ -34,15 +35,15 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .speed-row { color: #a7bbbc; font-size: 11px; }
 input[type=range] { min-width: 30px; width: 100%; accent-color: #02c8c2; }
 .audio-note { min-height: 10px; color: #95aeaf; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.focus-panel { min-height: 118px; height: 118px; flex: none; padding: 6px 9px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.focus-panel { min-height: 133px; height: 133px; flex: none; padding: 6px 9px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
 .focus-head { display: flex; gap: 7px; align-items: baseline; color: #b9cbcc; font-size: 11px; }
 .focus-head strong { color: #f0f6f5; font-size: 13px; }
 .passage-nav { margin-left: auto; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
 .passage-nav button { width: 24px; height: 23px; border: 1px solid #547276; border-radius: 6px; background: #172e32; font-size: 17px; line-height: 1; }
 .focus-details { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; padding-right: 3px; }
-.thai-focus { border-left: 3px solid #05c7c1; margin: 0; padding-left: 8px; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
-.romanization { padding-left: 11px; color: #b3c5c6; font-size: 12px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
-.meaning-line { padding-left: 11px; font-size: 13px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+.thai-focus { border-left: 3px solid #05c7c1; margin: 0; padding-left: 8px; font-size: 19px; line-height: 1.35; overflow-wrap: anywhere; }
+.romanization { padding-left: 11px; color: #b3c5c6; font-size: 13px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
+.meaning-line { padding-left: 11px; font-size: 14px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
 .tabs { height: 24px; flex: none; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; }
 .tab { height: 23px; border: 1px solid transparent; border-radius: 18px; background: transparent; font-weight: 600; color: #c4d2d2; }
 .tab.active { border-color: #05c7c1; background: #006c70; box-shadow: 0 0 12px #00c9c477; color: white; }

@@ -1,5 +1,15 @@
 # Acceptance record
 
+## Version 0.3.3 — sentence readability refinement
+
+| Check | Result | Evidence |
+|---|---|---|
+| Top/current sentence sizing | Passed, hidden Tauri window | At 640×480, Selected Text is 101 px (15 px shorter than 0.3.2); Current Sentence is 133 px (15 px taller). Thai sentence font is 19 px, pronunciation 13 px, English summary 14 px. Source wrapping remains enabled. |
+| Compact speech controls | Passed, hidden Tauri window | Play and Current Sentence are 26 px high; Stop remains 29 px. All three controls remain inside the audio panel with no overlapping bounds; the speed control remains present. |
+| Short and long Thai readability | Passed, hidden Tauri window | Short example displays its complete Thai, tone-marked pronunciation and English summary. A 211-character long example yields a 416-character pronunciation line; the Current Sentence scroll viewport is 92 px high with 203 px of content. No text is discarded. |
+| Existing bottom tabs | Passed, hidden Tauri window | Meaning, Words, Practice and the English panel styles are unchanged. The Meaning card remains 63 px high in the 640×480 viewport, matching 0.3.2. |
+| Build/tests/installer | Passed | Production build; 5 UI tests; 10 Rust library tests; hidden layout test; NSIS package silently installed (exit 0), reported ProductVersion 0.3.3, and silently uninstalled (exit 0) from an isolated temporary directory. |
+
 ## Version 0.3.2 — compact reading layout
 
 | Check | Result | Evidence |

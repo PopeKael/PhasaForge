@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 // Runs against a separate invisible Tauri window and isolated app-data identity.
 const root = resolve(".");
 const scratch = await mkdtemp(join(tmpdir(), "phasaforge-layout-ui-"));
-const screenshots = join(root, "release-artifacts", "0.3.2", "ui-check");
+const screenshots = join(root, "release-artifacts", "0.3.3", "ui-check");
 await mkdir(join(scratch, "Roaming"), { recursive: true });
 await mkdir(join(scratch, "Local"), { recursive: true });
 await mkdir(screenshots, { recursive: true });
@@ -76,16 +76,25 @@ try {
     const rect = selector => { const r = document.querySelector(selector).getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; };
     const style = selector => { const s = getComputedStyle(document.querySelector(selector)); return {fontSize:s.fontSize,whiteSpace:s.whiteSpace,overflowY:s.overflowY}; };
     const app = document.querySelector('#app').getBoundingClientRect();
-    return {viewport:[innerWidth,innerHeight],app:[app.width,app.height],source:rect('.source-panel'),audio:rect('.audio-panel'),focus:rect('.focus-panel'),meaning:rect('#meaning-view'),sourceStyle:style('#source-text'),thaiStyle:style('#thai-focus'),romanStyle:style('#romanization'),meaningStyle:style('#translation-english'),controls:['#play-selection','#play-current','#stop-speech','#speed'].map(s=>!!document.querySelector(s))};
+    return {viewport:[innerWidth,innerHeight],app:[app.width,app.height],source:rect('.source-panel'),audio:rect('.audio-panel'),focus:rect('.focus-panel'),meaning:rect('#meaning-view'),sourceStyle:style('#source-text'),thaiStyle:style('#thai-focus'),romanStyle:style('#romanization'),summaryStyle:style('#meaning-line'),meaningStyle:style('#translation-english'),buttons:['#play-selection','#play-current','#stop-speech'].map(s=>rect(s)),controls:['#play-selection','#play-current','#stop-speech','#speed'].map(s=>!!document.querySelector(s))};
   })()`);
   assert.deepEqual(layout.viewport, [640, 480]);
   assert.deepEqual(layout.app, [640, 480]);
-  assert.ok(layout.source.height >= 112 && layout.focus.height >= 115, "text and current-sentence panels should receive more height");
+  assert.equal(layout.source.height, 101, "Selected Text is 15 px shorter than 0.3.2");
+  assert.equal(layout.focus.height, 133, "Current Sentence receives the 15 px recovered from Selected Text");
   assert.equal(layout.controls.every(Boolean), true, "all speech controls and the speed slider remain available");
   assert.equal(layout.sourceStyle.fontSize, "15px");
-  assert.equal(layout.thaiStyle.fontSize, "16px");
+  assert.equal(layout.thaiStyle.fontSize, "19px");
   assert.equal(layout.romanStyle.whiteSpace, "normal");
+  assert.equal(layout.romanStyle.fontSize, "13px");
+  assert.equal(layout.summaryStyle.fontSize, "14px");
   assert.equal(layout.meaningStyle.fontSize, "18px");
+  assert.ok(layout.buttons[0].width > 0 && layout.buttons[1].width > 0 && layout.buttons[2].width > 0);
+  assert.ok(layout.buttons[0].x + layout.buttons[0].width <= layout.buttons[1].x, "Play and Current Sentence buttons do not overlap");
+  assert.ok(layout.buttons[1].x + layout.buttons[1].width <= layout.buttons[2].x, "Current Sentence and Stop buttons do not overlap");
+  assert.ok(layout.buttons[0].height <= 26 && layout.buttons[1].height <= 26, "Play buttons stay compact beside Stop");
+  assert.ok(layout.buttons.every(button => button.x >= layout.audio.x && button.x + button.width <= layout.audio.x + layout.audio.width), "speech buttons stay inside the audio panel");
+  assert.ok(layout.source.y + layout.source.height <= layout.focus.y, "top and sentence panels do not overlap");
   console.log("Layout geometry:", JSON.stringify(layout));
 
   async function enterThai(text) {
@@ -114,9 +123,13 @@ try {
   const long = await enterThai(longThai);
   assert.equal(long.thai, longThai);
   assert.ok(long.words.length > 10);
+  const focusScroll = await evaluate(`(() => {const e=document.querySelector('.focus-details');return {client:e.clientHeight,scroll:e.scrollHeight,overflow:getComputedStyle(e).overflowY};})()`);
+  assert.equal(focusScroll.overflow, "auto");
+  assert.ok(focusScroll.scroll > focusScroll.client, "long Thai and pronunciation remain available in the sentence panel scroll area");
   await evaluate("document.querySelector('[data-tab=meaning]').click()");
   const longMeaning = await evaluate(`(() => {const e=document.querySelector('#translation-english');const card=e.parentElement;return {text:e.textContent,font:getComputedStyle(e).fontSize,cardHeight:card.clientHeight,cardScroll:card.scrollHeight,overflow:getComputedStyle(card).overflowY,detailsVisible:!document.querySelector('.translation-details').open};})()`);
   assert.ok(longMeaning.text.length > 100, `long English translation should be present; got ${longMeaning.text.length} characters`);
+  assert.equal(longMeaning.cardHeight, 63, "Meaning translation card retains the 0.3.2 content height");
   assert.equal(longMeaning.font, "18px");
   assert.equal(longMeaning.overflow, "auto");
   assert.equal(longMeaning.detailsVisible, true, "provider details stay collapsed by default");
@@ -126,7 +139,7 @@ try {
   assert.ok(await evaluate("document.querySelector('#translation-source').textContent.includes('Azure Translator F0')"));
   assert.ok(await evaluate("!!document.querySelector('#translate-current')"), "manual retry remains available in translation details");
   console.log("Short passage:", JSON.stringify({ ...short, meaningLayout: shortMeaning }));
-  console.log("Long passage:", JSON.stringify({ thaiLength: long.thai.length, wordCount: long.words.length, readingLength: long.reading.length, englishLength: longMeaning.text.length, meaningLayout: { ...longMeaning, text: undefined } }));
+  console.log("Long passage:", JSON.stringify({ thaiLength: long.thai.length, wordCount: long.words.length, readingLength: long.reading.length, englishLength: longMeaning.text.length, focusScroll, meaningLayout: { ...longMeaning, text: undefined } }));
   console.log(`Hidden UI screenshots: ${screenshots}`);
 } finally {
   socket?.close();

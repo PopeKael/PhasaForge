@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3 — sentence readability refinement
+
+- Reduced the Selected Text and audio section heights by 15 px and added those 15 px to Current Sentence.
+- Made Play and Current Sentence buttons more compact without changing their actions or playback configuration.
+- Increased the Thai sentence text from 16 px to 19 px, pronunciation from 12 px to 13 px, and English summary from 13 px to 14 px; kept wrapping and sentence-panel scrolling.
+- Left the Meaning, Words and Practice tab layout unchanged.
+- Added hidden short/long sentence checks for sizing, text wrapping/scrolling, and non-overlapping speech controls.
+
 ## 0.3.2 — compact reading layout
 
 - Increased the Selected Text area and Current Sentence panel height, with larger Thai text and wrapped pronunciation/meaning lines.
