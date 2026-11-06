@@ -49,7 +49,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
             let log_path = diagnostics::app_log_path(app.handle());
-            diagnostics::log(log_path.as_deref(), "app.start version=0.3.0");
+            diagnostics::log(log_path.as_deref(), "app.start version=0.3.1");
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
             if !test_mode {
                 if let Err(error) = hotkey::start(app.handle().clone()) {
@@ -87,7 +87,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
-            language::ollama_models, language::pull_ollama_model, language::translate_local, language::test_local_translation])
+            language::ollama_models, language::pull_ollama_model, language::translate_local, language::test_local_translation,
+            language::save_translator_key, language::translator_key_status, language::translate_azure,
+            language::translate_auto, language::test_azure_translation])
         .build(tauri::generate_context!())
         .expect("PhasaForge failed to start");
     app.run(|_, event| {

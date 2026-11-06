@@ -11,6 +11,7 @@ pub struct LanguageState {
     db: Mutex<Connection>,
     path: PathBuf,
     tokenizer: kham_core::Tokenizer,
+    translation_lock: tokio::sync::Mutex<()>,
 }
 
 #[derive(Serialize)]
@@ -60,6 +61,8 @@ pub fn open(app: &AppHandle) -> Result<LanguageState, String> {
     }
     db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS corrections(word TEXT PRIMARY KEY, meaning TEXT NOT NULL, reading TEXT, note TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);")
         .map_err(|e| format!("Cannot prepare local correction store: {e}"))?;
+    db.execute_batch("CREATE TABLE IF NOT EXISTS translation_cache(thai TEXT PRIMARY KEY, english TEXT NOT NULL, provider TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS translator_usage(month TEXT PRIMARY KEY, characters INTEGER NOT NULL DEFAULT 0);")
+        .map_err(|e| format!("Cannot prepare translation cache: {e}"))?;
     let word_list = {
         let mut statement = db
             .prepare("SELECT word FROM words WHERE kind IN ('word','expression')")
@@ -79,6 +82,7 @@ pub fn open(app: &AppHandle) -> Result<LanguageState, String> {
         db: Mutex::new(db),
         path,
         tokenizer,
+        translation_lock: tokio::sync::Mutex::new(()),
     })
 }
 
@@ -399,6 +403,134 @@ fn local_client() -> Result<Client, String> {
         .map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "windows")]
+mod credential_store {
+    use std::ffi::c_void;
+    type Dword = u32;
+    type Bool = i32;
+    #[repr(C)]
+    struct FileTime { low: Dword, high: Dword }
+    #[repr(C)]
+    struct CredentialW {
+        flags: Dword, kind: Dword, target_name: *mut u16, comment: *mut u16,
+        last_written: FileTime, blob_size: Dword, blob: *mut u8, persist: Dword,
+        attribute_count: Dword, attributes: *mut c_void, target_alias: *mut u16,
+        username: *mut u16,
+    }
+    #[link(name = "Advapi32")]
+    unsafe extern "system" {
+        fn CredWriteW(credential: *const CredentialW, flags: Dword) -> Bool;
+        fn CredReadW(target: *const u16, kind: Dword, flags: Dword, out: *mut *mut CredentialW) -> Bool;
+        fn CredFree(buffer: *mut c_void);
+    }
+    const TARGET: &str = "PhasaForge/AzureTranslator/F0";
+    const GENERIC: Dword = 1;
+    const LOCAL_MACHINE: Dword = 2;
+
+    pub fn write(secret: &str) -> Result<(), String> {
+        if secret.trim().is_empty() || secret.len() > 1024 { return Err("Enter a valid Translator key.".into()); }
+        let mut target: Vec<u16> = TARGET.encode_utf16().chain(Some(0)).collect();
+        let mut username: Vec<u16> = "phasaforge-thai-translator".encode_utf16().chain(Some(0)).collect();
+        let mut blob = secret.trim().as_bytes().to_vec();
+        let credential = CredentialW { flags: 0, kind: GENERIC, target_name: target.as_mut_ptr(), comment: std::ptr::null_mut(), last_written: FileTime { low: 0, high: 0 }, blob_size: blob.len() as Dword, blob: blob.as_mut_ptr(), persist: LOCAL_MACHINE, attribute_count: 0, attributes: std::ptr::null_mut(), target_alias: std::ptr::null_mut(), username: username.as_mut_ptr() };
+        let ok = unsafe { CredWriteW(&credential, 0) };
+        blob.fill(0);
+        if ok == 0 { return Err(format!("Windows Credential Manager could not save the Translator key ({}).", std::io::Error::last_os_error())); }
+        Ok(())
+    }
+    pub fn read() -> Result<Option<String>, String> {
+        let target: Vec<u16> = TARGET.encode_utf16().chain(Some(0)).collect();
+        let mut ptr: *mut CredentialW = std::ptr::null_mut();
+        if unsafe { CredReadW(target.as_ptr(), GENERIC, 0, &mut ptr) } == 0 { return Ok(None); }
+        if ptr.is_null() { return Ok(None); }
+        let value = unsafe { std::slice::from_raw_parts((*ptr).blob, (*ptr).blob_size as usize) };
+        let secret = std::str::from_utf8(value).map_err(|_| "Stored Translator key is not valid UTF-8.".to_string()).map(str::to_owned);
+        unsafe { CredFree(ptr.cast()); }
+        secret.map(Some)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+mod credential_store {
+    pub fn write(_: &str) -> Result<(), String> { Err("Secure Translator credentials are supported only on Windows.".into()) }
+    pub fn read() -> Result<Option<String>, String> { Ok(None) }
+}
+
+#[tauri::command]
+pub fn save_translator_key(mut key: String) -> Result<(), String> {
+    use zeroize::Zeroize;
+    let result = credential_store::write(&key);
+    key.zeroize();
+    result
+}
+
+#[tauri::command]
+pub fn translator_key_status() -> Result<bool, String> { Ok(credential_store::read()?.is_some()) }
+
+#[derive(Serialize)]
+pub struct TranslationResult { pub english: String, pub provider: String, pub latency_ms: u128, pub cached: bool }
+
+async fn translate_azure_uncached(text: &str, key: &str) -> Result<String, String> {
+    let response = Client::builder().timeout(Duration::from_secs(10)).build().map_err(|e| e.to_string())?
+        .post("https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=th&to=en")
+        .header("Ocp-Apim-Subscription-Key", key)
+        .header("Ocp-Apim-Subscription-Region", "southeastasia")
+        .header("Content-Type", "application/json; charset=UTF-8")
+        .json(&serde_json::json!([{"text":text}])).send().await.map_err(|e| format!("Azure Translator request failed: {e}"))?;
+    if !response.status().is_success() { return Err(format!("Azure Translator returned HTTP {}. Check the F0 key and region in Settings.", response.status())); }
+    let value: serde_json::Value = response.json().await.map_err(|e| format!("Azure Translator response was invalid: {e}"))?;
+    value[0]["translations"][0]["text"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).ok_or_else(|| "Azure Translator returned no English text.".into())
+}
+
+fn azure_character_count(text: &str) -> i64 { text.encode_utf16().count() as i64 }
+
+#[tauri::command]
+pub async fn translate_azure(text: String, state: State<'_, LanguageState>) -> Result<TranslationResult, String> {
+    let text = text.trim();
+    if text.is_empty() || text.chars().count() > 5000 || !text.chars().any(|c| ('\u{0e00}'..='\u{0e7f}').contains(&c)) { return Err("Enter a Thai sentence under 5,000 characters.".into()); }
+    let _guard = state.translation_lock.lock().await;
+    let cached: Option<(String, String)> = state.db.lock().map_err(|_| "The local dictionary is busy".to_string())?.query_row("SELECT english,provider FROM translation_cache WHERE thai=?1", [text], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(|e| e.to_string())?;
+    if let Some((english, provider)) = cached { return Ok(TranslationResult { english, provider, latency_ms: 0, cached: true }); }
+    let key = zeroize::Zeroizing::new(credential_store::read()?.ok_or_else(|| "Translator key is not configured. Open Settings and save the F0 key.".to_string())?);
+    let length = azure_character_count(text);
+    {
+        let db = state.db.lock().map_err(|_| "The local dictionary is busy".to_string())?;
+        let used: i64 = db.query_row("SELECT COALESCE((SELECT characters FROM translator_usage WHERE month=strftime('%Y-%m','now')),0)", [], |r| r.get(0)).map_err(|e| e.to_string())?;
+        if used + length > 1_900_000 { return Err("PhasaForge's 1.9 million character monthly safety cap has been reached; no more hosted requests will be sent this month.".into()); }
+        // Reserve before the network call so retries and ambiguous failures cannot overshoot the cap.
+        db.execute("INSERT INTO translator_usage(month,characters) VALUES(strftime('%Y-%m','now'),?1) ON CONFLICT(month) DO UPDATE SET characters=characters+excluded.characters", [length]).map_err(|e| e.to_string())?;
+    }
+    let start = std::time::Instant::now();
+    let english = translate_azure_uncached(text, key.as_str()).await?;
+    let elapsed = start.elapsed().as_millis();
+    let db = state.db.lock().map_err(|_| "The local dictionary is busy".to_string())?;
+    db.execute("INSERT OR REPLACE INTO translation_cache(thai,english,provider) VALUES(?1,?2,'Azure Translator F0')", params![text, english]).map_err(|e| e.to_string())?;
+    Ok(TranslationResult { english, provider: "Azure Translator F0".into(), latency_ms: elapsed, cached: false })
+}
+
+#[tauri::command]
+pub async fn translate_auto(text: String, model: String, state: State<'_, LanguageState>) -> Result<TranslationResult, String> {
+    match translate_azure(text.clone(), state.clone()).await {
+        Ok(result) => Ok(result),
+        Err(azure_error) if !model.trim().is_empty() => {
+            let start = std::time::Instant::now();
+            translate_local(text, model.clone()).await.map(|english| TranslationResult { english, provider: format!("Ollama ({model}) · Azure fallback ({azure_error})"), latency_ms: start.elapsed().as_millis(), cached: false }).map_err(|ollama_error| format!("{azure_error} Ollama fallback also failed: {ollama_error}"))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[tauri::command]
+pub async fn test_azure_translation(state: State<'_, LanguageState>) -> Result<Vec<TranslationCheck>, String> {
+    let cases = [("ผมรู้สึกไม่สบาย", "I feel unwell."), ("นี่ของคุณใช่ไหม", "Is this yours?"), ("ไปเลย ไม่ต้องรอ", "Go ahead, no need to wait."), ("เด็กวิ่งข้ามถนน", "The child ran across the street."), ("ซื้อสองแถมหนึ่ง", "Buy two, get one free.")];
+    let mut output = Vec::new();
+    for (thai, reference) in cases {
+        let result = translate_azure(thai.into(), state.clone()).await?;
+        output.push(TranslationCheck { thai: thai.into(), reference: reference.into(), model_output: format!("{} ({} ms{})", result.english, result.latency_ms, if result.cached { ", cache" } else { "" }) });
+    }
+    Ok(output)
+}
+
 #[tauri::command]
 pub async fn ollama_models() -> Result<Vec<String>, String> {
     let response = local_client()?.get("http://127.0.0.1:11434/api/tags").send().await.map_err(|_| "Ollama is not responding on this PC (127.0.0.1:11434). Install/start it to use local translation.".to_string())?;
@@ -495,6 +627,11 @@ pub async fn test_local_translation(model: String) -> Result<Vec<TranslationChec
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn azure_character_accounting_uses_utf16_units() {
+        assert_eq!(azure_character_count("ไทย"), 3);
+        assert_eq!(azure_character_count("A😀"), 3);
+    }
     #[test]
     fn paiboon_tone_marks_are_mapped_without_guessing() {
         assert_eq!(tone("sà"), "low");

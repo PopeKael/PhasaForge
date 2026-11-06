@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 — automatic Azure F0 translation
+
+- Added automatic sentence translation through the configured Southeast Asia Azure Translator F0 resource, alongside instant offline sentence examples and SQLite word analysis.
+- Cached successful Azure translations locally and enforced a 1.9 million character monthly application cap to stay below F0's 2 million free monthly character allowance.
+- Stored Translator credentials in Windows Credential Manager; added Settings key-save and five-reference live endpoint test. No key is written to app settings, SQLite, logs or source control.
+- Kept Ollama available as a local fallback when Azure is unavailable and retained Offline and Ollama provider choices.
+- Automatic translation starts after sentence segmentation without delaying dictionary lookup or popup display. Added measured response latency and cache status.
+- Benchmarked live F0 and the installed Ollama Qwen3 0.6B model against five attributed examples; documented latency, quality and model memory in `docs/TRANSLATION_BENCHMARK.md`.
+
 ## 0.3.0 — Thai translation, dictionary and voice
 
 - Expanded the SQLite seed to 18,678 Thai entries and 29,483 senses by adding 13,567 entries from an attributed Kaikki/English-Wiktionary snapshot; kept ThaiReader source rows and saved corrections. No Kaikki quotations or audio are redistributed.

@@ -34,12 +34,12 @@ ttsAudio.addEventListener("error", () => {
   finishSpeech();
 });
 
-type Settings = { speed: number; voice: string; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string };
+type Settings = { speed: number; voice: string; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string; translationProviderConfigured: boolean };
 type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
 type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
-const defaults: Settings = { speed: 0.75, voice: "", hotkeyModifier: "right_ctrl", hotkeyKey: "up", translationProvider: "offline", translationModel: "" };
+const defaults: Settings = { speed: 0.75, voice: "", hotkeyModifier: "right_ctrl", hotkeyKey: "up", translationProvider: "azure", translationModel: "", translationProviderConfigured: true };
 const loadSettings = (): Settings => {
-  try { return { ...defaults, ...JSON.parse(localStorage.getItem(settingsKey) ?? "{}") }; }
+  try { const saved = JSON.parse(localStorage.getItem(settingsKey) ?? "{}"); const value = { ...defaults, ...saved }; if (saved.translationProviderConfigured !== true) { value.translationProvider = "azure"; value.translationProviderConfigured = true; } return value; }
   catch { return defaults; }
 };
 let settings = loadSettings();
@@ -52,8 +52,8 @@ function renderSentence(card: SentenceCard | undefined): void {
   $("sentence-position").textContent = `(Sentence ${analysis.length ? sentenceIndex + 1 : 0} of ${analysis.length})`;
   $("passage-count").textContent = `${analysis.length ? sentenceIndex + 1 : 0} of ${analysis.length}`;
   $("romanization").textContent = current ? `Pronunciation: ${card?.reading || "Thai words not detected"}` : "Pronunciation appears with the word breakdown.";
-  $("meaning-line").textContent = card?.meaning ? `Meaning: ${card.meaning}` : "Meaning: no sentence translation found in the offline examples.";
-  $("translation-source").textContent = card?.meaning_source ? `Source: ${card.meaning_source}. Dictionary meanings are learner-drafted and may need checking.` : "No exact sentence example is stored offline. You can ask a downloaded local translation model in Meaning.";
+  $("meaning-line").textContent = card?.meaning ? `Meaning: ${card.meaning}` : "Meaning: translation pending…";
+  $("translation-source").textContent = card?.meaning_source ? `Source: ${card.meaning_source}. Dictionary meanings are learner-drafted and may need checking.` : "Translation is automatic. Exact offline examples appear instantly; new text uses the selected provider.";
   renderWords(card?.words ?? []);
   localStorage.setItem(selectedKey, source.value);
 }
@@ -74,11 +74,40 @@ function renderPassage(): void {
     sentenceIndex = 0;
     renderSentence(cards[0]);
     $("capture-status").textContent = cards.length ? `Offline analysis ready · ${cards.length} sentence${cards.length === 1 ? "" : "s"}` : "No sentence text was found.";
+    if (settings.translationProvider !== "offline") {
+      for (let i = 0; i < cards.length; i++) {
+        const card = cards[i];
+        if (card.meaning) continue;
+        void translateCard(card, request, i);
+      }
+    }
   }).catch(error => {
     if (request !== analysisRequest) return;
     $("capture-status").textContent = `Thai analysis failed: ${String(error)}`;
     $("meaning-line").textContent = "Meaning: local dictionary could not be opened.";
   });
+}
+
+async function translateCard(card: SentenceCard, request: number, index: number): Promise<void> {
+  try {
+    let result: { english: string; provider: string; latency_ms: number; cached: boolean };
+    if (settings.translationProvider === "ollama") {
+      const start = performance.now();
+      const english = await invoke<string>("translate_local", { text: card.text, model: settings.translationModel });
+      result = { english, provider: `Ollama (${settings.translationModel})`, latency_ms: Math.round(performance.now() - start), cached: false };
+    } else {
+      result = await invoke("translate_auto", { text: card.text, model: settings.translationModel });
+    }
+    if (request !== analysisRequest || !analysis[index] || analysis[index].text !== card.text) return;
+    card.meaning = result.english;
+    card.meaning_source = `${result.provider} · machine translation${result.cached ? " · cached" : ""}`;
+    if (index === sentenceIndex) renderSentence(card);
+    $("translation-status").textContent = `${result.cached ? "Cached" : "Translated"} in ${result.latency_ms} ms via ${result.provider}.`;
+  } catch (error) {
+    if (request !== analysisRequest) return;
+    if (index === sentenceIndex && !card.meaning) $("meaning-line").textContent = "Meaning: translation unavailable; see Settings for provider status.";
+    $("translation-status").textContent = `Translation failed: ${String(error)}`;
+  }
 }
 
 function renderShortcut(): void {
@@ -267,8 +296,10 @@ $("settings-toggle").addEventListener("click", () => {
 });
 $("translation-provider").addEventListener("change", () => {
   settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
+  settings.translationProviderConfigured = true;
   localStorage.setItem(settingsKey, JSON.stringify(settings));
-  $("provider-status").textContent = settings.translationProvider === "offline" ? "Offline examples and word lookup are local; no network is used." : "Translation is sent only to Ollama at 127.0.0.1 on this PC.";
+  $("provider-status").textContent = settings.translationProvider === "offline" ? "Offline examples and word lookup are local; no network is used." : settings.translationProvider === "ollama" ? "Translation is sent only to Ollama at 127.0.0.1 on this PC." : "Azure Translator F0 is the automatic provider. The app stops hosted requests at 1.9M characters per month; Ollama can serve as fallback.";
+  if (source.value.trim()) renderPassage();
 });
 $("refresh-models").addEventListener("click", () => { void refreshOllamaModels(); });
 $("test-offline").addEventListener("click", async () => {
@@ -340,15 +371,37 @@ $("translate-current").addEventListener("click", async () => {
   const sentence = analysis[sentenceIndex];
   if (!sentence) { $("translation-status").textContent = "Add Thai text first."; return; }
   if (sentence.meaning && sentence.meaning_source?.startsWith("ThaiReader")) { $("translation-status").textContent = "An attributed offline sentence example is already shown."; return; }
-  if (settings.translationProvider !== "ollama" || !settings.translationModel) { $("translation-status").textContent = "Select Local Ollama and a model in Settings first."; return; }
+  if (settings.translationProvider === "offline") { $("translation-status").textContent = "Offline mode only shows stored sentence examples; select Azure F0 or Ollama to translate new text."; return; }
+  if (settings.translationProvider === "ollama" && !settings.translationModel) { $("translation-status").textContent = "Select an installed Ollama model in Settings first."; return; }
   const button = $<HTMLButtonElement>("translate-current"); button.disabled = true;
-  $("translation-status").textContent = "Translating on the local Ollama service…";
+  $("translation-status").textContent = "Retrying translation…";
+  await translateCard(sentence, analysisRequest, sentenceIndex);
+  button.disabled = false;
+});
+$("save-azure-key").addEventListener("click", async () => {
+  const input = $<HTMLInputElement>("azure-key");
+  if (!input.value.trim()) { $("provider-status").textContent = "Paste a key from this resource's Keys and Endpoint page first."; return; }
   try {
-    sentence.meaning = await invoke<string>("translate_local", { text: sentence.text, model: settings.translationModel });
-    sentence.meaning_source = `Local Ollama (${settings.translationModel}) · machine translation`;
-    renderSentence(sentence);
-    $("translation-status").textContent = "Local model output shown. Check nuance before relying on it.";
-  } catch (error) { $("translation-status").textContent = `Local translation failed: ${String(error)}`; }
+    await invoke("save_translator_key", { key: input.value });
+    input.value = "";
+    $("provider-status").textContent = "F0 key saved in Windows Credential Manager. It is not stored in app settings or the database.";
+  } catch (error) { $("provider-status").textContent = `Could not securely save the key: ${String(error)}`; }
+});
+$("test-azure-translation").addEventListener("click", async () => {
+  const button = $<HTMLButtonElement>("test-azure-translation");
+  const results = $("translation-test-results"); results.replaceChildren(); button.disabled = true;
+  $("provider-status").textContent = "Testing the Azure F0 endpoint against five attributed ThaiReader examples…";
+  try {
+    const cases = await invoke<{ thai: string; reference: string; model_output: string }[]>("test_azure_translation");
+    for (const item of cases) {
+      const row = document.createElement("div"); row.className = "translation-test-row";
+      const thai = document.createElement("strong"); thai.lang = "th"; thai.textContent = item.thai;
+      const reference = document.createElement("span"); reference.textContent = `Reference: ${item.reference}`;
+      const output = document.createElement("span"); output.textContent = `Azure: ${item.model_output}`;
+      row.append(thai, reference, output); results.append(row);
+    }
+    $("provider-status").textContent = `Azure F0 returned ${cases.length} real translations. Compare the output with each ThaiReader reference; latency is shown per result.`;
+  } catch (error) { $("provider-status").textContent = `Azure test failed: ${String(error)}`; }
   finally { button.disabled = false; }
 });
 $("save-correction").addEventListener("click", async () => {
@@ -365,6 +418,7 @@ $("refresh-dictionary").addEventListener("click", async () => {
 $("save-settings").addEventListener("click", async () => {
   settings.voice = $<HTMLSelectElement>("voice-select").value;
   settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
+  settings.translationProviderConfigured = true;
   settings.translationModel = $<HTMLSelectElement>("translation-model").value;
   settings.hotkeyModifier = $<HTMLSelectElement>("hotkey-modifier").value;
   settings.hotkeyKey = $<HTMLSelectElement>("hotkey-key").value;
@@ -457,6 +511,10 @@ if ("__TAURI_INTERNALS__" in window) {
     $("voice-setup-note").textContent = "Windows native Thai voice discovery failed: " + String(error) + ". Install a Thai text-to-speech voice in Windows Settings.";
   });
   void invoke<string>("database_location").then(path => { $<HTMLInputElement>("database-path").value = path; }).catch(error => { $<HTMLInputElement>("database-path").value = String(error); });
+  void invoke<boolean>("translator_key_status").then(configured => {
+    if (configured) $("provider-status").textContent = "Azure Translator F0 key is stored in Windows Credential Manager. Automatic translation is ready.";
+    else if (settings.translationProvider === "azure") $("provider-status").textContent = "Paste the Azure Translator F0 key in Settings to enable automatic hosted translation. Offline word analysis remains ready.";
+  }).catch(error => { $("provider-status").textContent = `Could not check secure Translator key status: ${String(error)}`; });
   void listen<{ text: string | null; rect: { x: number; y: number; width: number; height: number } | null; clipboard_restored: boolean | null; source: string; clipboard_status: string }>("selection-captured", async event => {
     const capture = event.payload;
     // A failed/empty capture replaces the previous source; never imply stale text was newly selected.

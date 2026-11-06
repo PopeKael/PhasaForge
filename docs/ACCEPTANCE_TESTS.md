@@ -1,5 +1,21 @@
 # Acceptance record
 
+## Version 0.3.1 — Azure Translator F0 automatic translation
+
+| Check | Result | Evidence |
+|---|---|---|
+| Azure subscription/resource | Passed | Existing active subscription; resource `phasaforge-thai-translator` is Active, TextTranslation, Southeast Asia, Free F0. No paid tier or Pay-As-You-Go upgrade was selected. |
+| Secure API key | Passed | Both keys were rotated after the portal accessibility snapshot exposed them; the final key is saved in Windows Credential Manager and is absent from Git, app settings, SQLite and logs. The hidden Tauri app confirmed the credential can be read. |
+| F0 reference translations | Passed | Five real Azure calls matched their ThaiReader v42 meanings. Recorded live call latency was 144–328 ms (most recent run 202–328 ms); samples are in `docs/TRANSLATION_BENCHMARK.md`. |
+| Automatic translation / cache | Passed, hidden Tauri window | An uncommon Thai sentence was segmented into eight tiles and automatically translated as “The purple monkey is piloting a spaceship over Chiang Mai.” UI showed Azure F0 attribution. Repeated translation returned a SQLite cache hit with no second request. |
+| 640×480 UI | Passed, hidden Tauri window | WebView reported exactly 640×480; the existing learning view and in-window scrollable Settings remained present. Test window did not take desktop focus. |
+| Local model comparison | Completed, five references | Installed Ollama `qwen3:0.6b` Q4_K_M was 2.49 seconds cold and 39–72 ms warm, with about 930 MB reported model VRAM residency. Only one of five translations was acceptable; see the benchmark. |
+| Application monthly safety cap | Passed by source/build review | Uncached Azure text is reserved in SQLite before the API request; counts use UTF-16 units; requests stop at 1.9 million characters per UTC month. Cached translations do not make another request. |
+| Rust/UI tests and build | Passed | 10 Rust tests; 5 frontend UI tests; TypeScript/Vite production build; hidden real-endpoint Tauri acceptance test. |
+| NSIS installer | Passed, silent | Installed version 0.3.1 in an isolated temporary directory, confirmed `PhasaForge.exe` and `uninstall.exe`, then silently uninstalled with exit 0 and verified the test directory was removed. |
+
+The Azure resource remains on F0. The app does not change subscription billing settings or upgrade the service.
+
 ## Version 0.3.0 — Thai translation, dictionary, and local speech
 
 | Check | Result | Evidence |

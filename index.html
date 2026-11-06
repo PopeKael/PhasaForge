@@ -55,8 +55,8 @@
         <section class="tab-content" id="meaning-view" hidden>
           <h2>Meaning</h2>
           <p id="translation-source" class="muted">Exact offline example matches and their sources are shown here. Other sentences are not silently guessed.</p>
-          <p class="muted">Choose a local Ollama model in Settings to translate new sentences on this PC. Model output is labelled as machine translation.</p>
-          <button id="translate-current" class="secondary-button small">Translate current sentence locally</button>
+          <p class="muted">Sentence translation starts automatically after local word analysis. Azure F0 is capped below its free monthly allowance; Ollama can act as an optional fallback.</p>
+          <button id="translate-current" class="secondary-button small">Retry current sentence</button>
           <span id="translation-status" class="muted"></span>
         </section>
 
@@ -78,11 +78,13 @@
         <section class="tab-content settings-view" id="settings-view" hidden>
           <h2>Settings</h2>
           <h3>Thai text and translation</h3>
-          <label class="setting-row">Translation provider<select id="translation-provider"><option value="offline">Offline examples (no network)</option><option value="ollama">Local Ollama model</option></select></label>
+          <label class="setting-row">Translation provider<select id="translation-provider"><option value="azure">Azure Translator F0 · automatic · free tier</option><option value="ollama">Local Ollama model</option><option value="offline">Offline examples (no network)</option></select></label>
+          <label class="setting-row">Azure F0 key <input id="azure-key" type="password" autocomplete="new-password" placeholder="Paste key1/key2; saved to Windows Credential Manager" /></label>
+          <div class="setting-actions"><button id="save-azure-key" class="secondary-button small">Save F0 key securely</button><button id="test-azure-translation" class="secondary-button small">Test 5 translations</button></div>
           <label class="setting-row">Ollama model<select id="translation-model"><option value="">Check local models…</option></select></label>
           <label class="setting-row">Model to download <input id="model-download-name" type="text" value="qwen3.5:4b" placeholder="e.g. qwen3.5:4b" /></label>
           <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download model</button><button id="test-local-translation" class="secondary-button small">Test 5 references</button></div>
-          <p id="provider-status" class="muted" role="status">Offline mode uses the bundled Thai learner examples and dictionary. Local translation requires Ollama and a model. On this PC, the tested 27B Qwen model (about 10.9 GB on disk) is preferred when installed; smaller models may miss specific terms.</p>
+          <p id="provider-status" class="muted" role="status">Azure F0 translates automatically using the free monthly quota. Its key stays in Windows Credential Manager. Set an Ollama model to enable fallback when Azure is unavailable.</p>
           <div id="translation-test-results" class="translation-test-results" aria-live="polite"></div>
           <div class="setting-actions"><button id="test-offline" class="secondary-button small">Test offline Thai engine</button><span id="engine-test-status" class="muted" role="status"></span></div>
           <h3>Local knowledge base</h3>
@@ -108,7 +110,7 @@
         </section>
         <audio id="recorded-audio" hidden></audio>
       </main>
-      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.3.0</span></footer>
+      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.3.1</span></footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

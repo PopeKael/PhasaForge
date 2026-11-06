@@ -1,21 +1,24 @@
 # PhasaForge
 
-PhasaForge is a compact Windows Thai study popup. Version 0.3.0 turns selected or pasted Thai into offline sentence analysis and clickable word cards within the 640×480 window, with optional local translation and Thai speech.
+PhasaForge is a compact Windows Thai study popup. Version 0.3.1 turns selected or pasted Thai into offline sentence analysis and clickable word cards within the 640×480 window, with automatic Azure Translator F0 English translation and Thai speech.
 
-## What 0.3.0 does
+## What 0.3.1 does
 
 - Splits sentences and Thai words with [Khám](https://crates.io/crates/kham-core), using the bundled ThaiReader vocabulary as an additional segmentation dictionary.
 - Looks up learner meanings, Paiboon+ readings, syllable divisions, examples, source notes and confidence in an embedded SQLite database. The first run copies the database to the user's Windows application-data directory; saved corrections remain local and survive app updates.
 - Uses exact, attributed learner examples for sentence translations when a match exists. The sentence printed in the supplied UI concept is included as owner-provided sample text. For other sentences, the app says when it has no sentence-level translation instead of inventing one.
 - Supplements the existing ThaiReader SQLite data with 13,567 additional English-Wiktionary/Kaikki Thai entries, retaining source attribution and CC BY-SA licensing. It excludes Kaikki literary quotations and external audio. User corrections remain separate and survive seed upgrades.
-- Offers local Ollama translation using a configurable installed model. Requests go only to `127.0.0.1:11434`; no remote translation service is called. On this PC, `qwen3.8-27b-ud-iq3-xxs:ctx32k` was tested against five attributed examples and three new sentences; it preserved an unfamiliar ingredient (“olive oil”) that smaller 4B/9B models mistranslated. The app prefers an installed higher-capacity Qwen model, but users should run the reference check on their own model. Machine translations can still be wrong.
+- Automatically translates sentences with the Microsoft Azure Translator F0 resource when configured. Successful results are cached in the local SQLite database; exact stored examples and word lookup remain immediate and offline. A 1.9 million character monthly application cap leaves headroom under F0's 2 million monthly free characters. The API key is stored in Windows Credential Manager, never in app settings, the database or logs. Azure failures use the selected Ollama model as a fallback when available. Ollama remains optional and local requests go only to `127.0.0.1:11434`.
+- On the prior test PC, `qwen3.8-27b-ud-iq3-xxs:ctx32k` preserved an unfamiliar ingredient (“olive oil”) that smaller 4B/9B models mistranslated, but uses far more memory than hosted translation. Machine translation can still be wrong.
 - Generates Thai speech locally through Meta MMS-TTS (`facebook/mms-tts-tha`) on CPU, with sentence and selected-text playback. The optional model is fetched on first use and is licensed CC BY-NC 4.0, so commercial use is not permitted under that model license. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; audio text remains local.
 - Preserves local microphone recording and replay. Thai ASR and pronunciation scoring are not included in this release.
 - Enforces one running instance. The default Right Ctrl + Up hotkey captures first, then opens/focuses the popup. The tray menu and window dragging remain.
 - Avoids the 0.2.0 Opera clipboard crash by never flushing a foreign OLE data object; see the [Issue #4 crash analysis and test limits](docs/ISSUE_4.md). Diagnostic logs omit selected text.
 - Resolves the focused UI Automation element's Control View ancestors when the focused leaf does not expose a text selection. Clipboard fallback remains limited to empty/text-only clipboard contents; skipped fallbacks are distinct from failed restoration, and an empty capture clears any previously shown text. See [Issue #6 capture recovery](docs/ISSUE_6.md).
 
-Offline dictionary lookup and stored examples need no network. Translation requires Ollama plus a downloaded model. First-time local speech setup downloads the optional MMS model and requires the Python packages listed above. Neither model is bundled. No third-party lesson media is included.
+Offline dictionary lookup and stored examples need no network. Automatic hosted translation requires an Azure Translator F0 resource and its key, which you save under **Settings → Azure F0 key**. The app enforces the 1.9M character monthly cap and caches translations. Ollama is an optional fallback; it requires Ollama and a downloaded model. First-time local speech setup downloads the optional MMS model and requires the Python packages listed above. Neither model is bundled. No third-party lesson media is included.
+
+The provider latency and quality spot-check against Ollama `qwen3:0.6b` is recorded in [the translation benchmark](docs/TRANSLATION_BENCHMARK.md). On the test PC the live F0 reference calls averaged 193 ms and matched all five examples; the 0.6B local model was faster when warm but matched only one of five meanings.
 
 ## Setup and build
 
@@ -48,6 +51,7 @@ The audio/video library at `D:\Music\Thai Language` remains reference-only. No l
 - [Architecture](docs/ARCHITECTURE.md)
 - [Build and release](docs/BUILD_AND_RELEASE.md)
 - [Acceptance record](docs/ACCEPTANCE_TESTS.md)
+- [Translation benchmark and quota guard](docs/TRANSLATION_BENCHMARK.md)
 - [Thai data attribution](reference-data/kaikki-thai/ATTRIBUTION.md)
 - [Issue #4 crash analysis](docs/ISSUE_4.md)
 - [Issue #6 selection capture recovery](docs/ISSUE_6.md)
