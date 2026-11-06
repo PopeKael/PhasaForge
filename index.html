@@ -80,8 +80,10 @@
           <h3>Thai text and translation</h3>
           <label class="setting-row">Translation provider<select id="translation-provider"><option value="offline">Offline examples (no network)</option><option value="ollama">Local Ollama model</option></select></label>
           <label class="setting-row">Ollama model<select id="translation-model"><option value="">Check local models…</option></select></label>
-          <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download qwen3:1.7b</button></div>
-          <p id="provider-status" class="muted" role="status">Offline mode uses the bundled Thai learner examples and dictionary. No Internet service is called.</p>
+          <label class="setting-row">Model to download <input id="model-download-name" type="text" value="qwen3.5:4b" placeholder="e.g. qwen3.5:4b" /></label>
+          <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download model</button><button id="test-local-translation" class="secondary-button small">Test 5 references</button></div>
+          <p id="provider-status" class="muted" role="status">Offline mode uses the bundled Thai learner examples and dictionary. Local translation requires Ollama and a model. On this PC, the tested 27B Qwen model (about 10.9 GB on disk) is preferred when installed; smaller models may miss specific terms.</p>
+          <div id="translation-test-results" class="translation-test-results" aria-live="polite"></div>
           <div class="setting-actions"><button id="test-offline" class="secondary-button small">Test offline Thai engine</button><span id="engine-test-status" class="muted" role="status"></span></div>
           <h3>Local knowledge base</h3>
           <label class="setting-row">SQLite file <input id="database-path" type="text" readonly /></label>
@@ -95,8 +97,9 @@
           <label class="setting-row">Shortcut key<select id="hotkey-key"><option value="up">Up Arrow</option><option value="down">Down Arrow</option><option value="space">Space</option></select></label>
           <p class="muted" id="hotkey-status">Only the chosen shortcut is used; unrelated keys pass through. No other keyboard input is stored.</p>
           <label class="setting-row">Thai voice<select id="voice-select"><option value="">No Thai voice detected</option></select></label>
-          <button id="test-voice" class="secondary-button small">Test Thai voice</button>
-          <p class="muted" id="voice-setup-note">Install Thai under Windows Settings → Time &amp; language → Language &amp; region → Thai → Language options, then add Text-to-speech if offered. Narrator Settings also offers Add voices on supported systems.</p>
+          <button id="test-voice" class="secondary-button small">Test selected Thai voice</button>
+          <button id="install-mms-voice" class="secondary-button small">Download + test local Thai voice</button>
+          <p class="muted" id="voice-setup-note">Local MMS Thai speech runs on CPU; first use downloads the optional model to app data. Requires Python 3.10+ with torch, transformers, and numpy. Model license: CC BY-NC 4.0 (non-commercial use only). Text stays on this PC.</p>
           <label class="setting-row">Thai playback speed<input id="settings-speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /></label>
           <h3>Speech recognition</h3>
           <p id="asr-status" class="muted">Thai offline recognition is not configured. Recording and replay remain available; no transcript or score is fabricated.</p>
@@ -105,7 +108,7 @@
         </section>
         <audio id="recorded-audio" hidden></audio>
       </main>
-      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.2.2</span></footer>
+      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.3.0</span></footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

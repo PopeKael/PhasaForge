@@ -1,5 +1,6 @@
 node_modules/
 .cargo-home/
+.cache-tts/
 dist/
 src-tauri/target/
 src-tauri/gen/

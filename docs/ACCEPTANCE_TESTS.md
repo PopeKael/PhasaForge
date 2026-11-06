@@ -1,4 +1,20 @@
-# Acceptance record — 0.2.1 corrective release
+# Acceptance record
+
+## Version 0.3.0 — Thai translation, dictionary, and local speech
+
+| Check | Result | Evidence |
+|---|---|---|
+| SQLite source refresh | Passed | Schema v44: 18,678 words and 29,483 senses, including 5,111 ThaiReader rows and 13,567 added Kaikki/Wiktionary rows; 15,961 ThaiReader examples plus one separately attributed project-concept sample. Kaikki quotation examples and audio are excluded. The JSONL source checksum is verified by the build script. |
+| User corrections | Passed | Rust migration test upgrades v43→v44 and confirms an existing correction remains authoritative. Kaikki lookup now supports nullable reading values without inventing pronunciation. |
+| Thai segmentation / learning UI | Passed, hidden Tauri window | At 640×480, the Rust/SQLite engine produced sentence boundaries, 12 clickable words, tone-marked reading, and the exact stored concept translation. Clicking ผัก exposed its meaning, `pàk`, low tone, source note, and example. A new sentence using Kaikki-only น้ำมันมะกอก resolved to “olive oil” with a sourced reading. |
+| Settings layout, pull, and model checks | Passed, hidden Tauri window | Settings remains inside the fixed 640×480 window and scrolls within its 195 px viewport. Ollama model discovery populated the selector; **Download model** successfully issued a pull for the already-installed `qwen3.5:4b` tag; **Test 5 references** then ran with the selected 27B model. No user desktop window or hotkey hook was started. |
+| Known translation references | Passed on the tested model | Local Ollama 0.40.14 + `qwen3.8-27b-ud-iq3-xxs:ctx32k` returned meaning-aligned outputs for five exact ThaiReader references through the Settings UI. No automatic accuracy score is claimed. |
+| Unfamiliar translation and smaller-model limitation | Passed with explicit limitation | The UI translated `แม่ใส่น้ำมันมะกอกลงในกระทะ` as “Mom put olive oil in the pan.” The 27B model also handled two other new sentences. Qwen 4B and 9B both changed “olive oil” to “coconut oil” on that example; smaller models are not presented as equally reliable. |
+| Real Thai speech generation and UI playback path | Passed silently | The MMS backend generated valid nonzero 16 kHz PCM WAV for a sentence and a Thai word. Hidden WebView playback through **Play Thai word** reached the playing state with its audio element muted, so the user’s speakers were not touched. No Thai Windows voice was installed. MMS CPU inference was used because the local Windows ROCm/Torch GPU path crashed in `amdhip64_7.dll`. |
+| Native and frontend tests | Passed | `cargo test --lib --locked --offline --manifest-path src-tauri/Cargo.toml`: 9 passed. `npm run test:ui`: 5 passed. `npm run build`: TypeScript and Vite production build passed. `git diff --check` is recorded before commit. |
+| NSIS installer | Passed, silent | Installed the version 0.3.0 package into a new TEMP directory using `/S /D=...`, verified `PhasaForge.exe`, `uninstall.exe`, and DisplayVersion 0.3.0, then silently uninstalled with exit 0 and verified the executable and uninstall registration were removed. The app was not launched by the installer test. |
+
+The hidden Tauri UI run used a temporary user profile, temporary app data, no tray, and no global hotkey. Test screenshots and diagnostics are in `release-artifacts/0.3.0/ui-verification/`.
 
 See [Issue #4 analysis](ISSUE_4.md) for WER evidence and the confirmed hotkey clipboard fault path.
 

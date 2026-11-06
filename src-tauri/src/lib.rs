@@ -4,8 +4,8 @@ use tauri::{
     Manager, RunEvent, WindowEvent,
 };
 
-mod hotkey;
 mod diagnostics;
+mod hotkey;
 mod language;
 mod selection;
 mod speech;
@@ -18,6 +18,14 @@ fn list_thai_voices() -> Vec<speech::ThaiVoice> {
 #[tauri::command]
 async fn synthesize_thai(text: String, voice_id: String, rate: f64) -> Result<Vec<u8>, String> {
     speech::synthesize(text, voice_id, rate).await
+}
+
+#[tauri::command]
+async fn synthesize_mms_thai(text: String, app: tauri::AppHandle) -> Result<Vec<u8>, String> {
+    let dir = diagnostics::app_data_dir(&app).ok_or_else(|| {
+        "Cannot resolve local app-data folder for the Thai voice model".to_string()
+    })?;
+    speech::synthesize_mms(text, dir).await
 }
 
 #[tauri::command]
@@ -41,7 +49,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
             let log_path = diagnostics::app_log_path(app.handle());
-            diagnostics::log(log_path.as_deref(), "app.start version=0.2.2");
+            diagnostics::log(log_path.as_deref(), "app.start version=0.3.0");
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
             if !test_mode {
                 if let Err(error) = hotkey::start(app.handle().clone()) {
@@ -77,9 +85,9 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai,
+        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
-            language::ollama_models, language::pull_ollama_model, language::translate_local])
+            language::ollama_models, language::pull_ollama_model, language::translate_local, language::test_local_translation])
         .build(tauri::generate_context!())
         .expect("PhasaForge failed to start");
     app.run(|_, event| {

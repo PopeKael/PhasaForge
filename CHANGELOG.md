@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 — Thai translation, dictionary and voice
+
+- Expanded the SQLite seed to 18,678 Thai entries and 29,483 senses by adding 13,567 entries from an attributed Kaikki/English-Wiktionary snapshot; kept ThaiReader source rows and saved corrections. No Kaikki quotations or audio are redistributed.
+- Fixed the empty Ollama translation response by disabling Qwen thinking mode, constraining output to translation, and adding local reference tests in Settings. Compared local Qwen 4B, 9B and 27B models against five bundled ThaiReader references and three new sentences; 27B preserved the unfamiliar olive-oil ingredient that 4B/9B changed.
+- Added configurable Ollama model download and model selection in the scrollable Settings view.
+- Added optional local CPU Thai speech using Meta MMS-TTS. Settings downloads the model on first test/use; sentence and selected-text playback use synthesized audio. Python, PyTorch, Transformers, and NumPy are prerequisites. The voice model is CC BY-NC 4.0 and not suitable for commercial use.
+- Kept English-to-Thai, ASR, and additional languages out of this release. Preserved the Windows shell, hotkey, tray, and compact 640×480 window.
+- LEXiTRON was not directly bulk imported because its current data listing does not state redistribution terms.
+
 ## 0.2.2 — Opera selection capture recovery
 
 - Query up to 16 Control View ancestors for UI Automation TextPattern selections, with diagnostic control-type/depth data and no text content in logs.

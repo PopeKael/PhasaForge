@@ -12,6 +12,7 @@ const source = $<HTMLTextAreaElement>("source-text");
 const speed = $<HTMLInputElement>("speed");
 const selectedKey = "phasaforge.selected-text";
 const settingsKey = "phasaforge.settings";
+const MMS_VOICE = "mms:facebook/mms-tts-tha";
 let sentences: string[] = [];
 let sentenceIndex = 0;
 let mediaRecorder: MediaRecorder | undefined;
@@ -104,10 +105,12 @@ function renderWords(words: WordCard[]): void {
       details.replaceChildren();
       const meaning = document.createElement("strong"); meaning.textContent = word.meaning ?? "Meaning not found in the local dictionary";
       const reading = document.createElement("p"); reading.textContent = `Paiboon+ reading: ${word.reading ?? "unavailable"}`;
+      const playWord = document.createElement("button"); playWord.className = "secondary-button small"; playWord.type = "button"; playWord.textContent = "▶ Play Thai word";
+      playWord.addEventListener("click", () => speak(word.word));
       const syllables = document.createElement("div"); syllables.className = "word-syllables";
       if (word.syllables.length) for (const item of word.syllables) { const tag = document.createElement("span"); tag.className = "word-syllable"; tag.textContent = `${item.reading} · ${item.tone} tone`; syllables.append(tag); }
       const attribution = document.createElement("p"); attribution.textContent = `Source: ${word.source ?? "not found"}${word.confidence === null ? "" : ` · evidence status: ${word.confidence}`}`;
-      details.append(meaning, reading, syllables, attribution);
+      details.append(meaning, reading, playWord, syllables, attribution);
       if (word.note) { const note = document.createElement("p"); note.textContent = word.note; details.append(note); }
       if (word.example_thai && word.example_english) { const example = document.createElement("p"); example.lang = "th"; example.textContent = `Example: ${word.example_thai} · ${word.example_english}`; details.append(example); }
     });
@@ -126,16 +129,27 @@ function updateVoiceOptions(): void {
   select.replaceChildren();
   for (const voice of nativeThaiVoices) select.add(new Option(voice.name + " (" + voice.language + " · Windows)", "winrt:" + voice.id));
   for (const voice of voices) select.add(new Option(voice.name + " (" + voice.lang + " · WebView)", "web:" + voice.name));
-  const values = nativeThaiVoices.map(v => "winrt:" + v.id).concat(voices.map(v => "web:" + v.name));
-  if (!values.length) {
-    select.add(new Option("No Thai voice detected", ""));
-    $("voice-note").textContent = "No installed Thai speech voice was found. Playback is unavailable until one is installed.";
-    return;
-  }
-  if (!values.includes(settings.voice)) settings.voice = values[0];
+  select.add(new Option("MMS Thai · local CPU · CC BY-NC 4.0", MMS_VOICE));
+  const values = nativeThaiVoices.map(v => "winrt:" + v.id).concat(voices.map(v => "web:" + v.name), [MMS_VOICE]);
+  if (!values.includes(settings.voice)) settings.voice = nativeThaiVoices[0] ? "winrt:" + nativeThaiVoices[0].id : voices[0] ? "web:" + voices[0].name : MMS_VOICE;
   select.value = settings.voice;
   const activeNative = nativeThaiVoices.find(v => "winrt:" + v.id === settings.voice);
-  $("voice-note").textContent = activeNative ? "Windows Thai voice ready: " + activeNative.name : "Thai WebView voice ready: " + settings.voice.slice(4);
+  $("voice-note").textContent = activeNative ? "Windows Thai voice ready: " + activeNative.name : settings.voice === MMS_VOICE ? "Local MMS Thai voice is available; choose Download + test to prepare its model." : "Thai WebView voice ready: " + settings.voice.slice(4);
+}
+
+function playSynthesized(bytes: number[], description: string): void {
+  const blob = new Blob([new Uint8Array(bytes)], { type: "audio/wav" });
+  if (ttsAudioUrl) URL.revokeObjectURL(ttsAudioUrl);
+  ttsAudioUrl = URL.createObjectURL(blob);
+  ttsAudio.src = ttsAudioUrl;
+  ttsAudio.playbackRate = Number(speed.value);
+  void ttsAudio.play().then(() => {
+    $("voice-note").textContent = description;
+    $("stop-speech").removeAttribute("disabled");
+  }).catch(error => {
+    $("voice-note").textContent = "Generated Thai audio could not be played by this Windows WebView: " + String(error);
+    finishSpeech();
+  });
 }
 
 function speak(text: string): void {
@@ -149,15 +163,23 @@ function speak(text: string): void {
     if (ttsAudioUrl) URL.revokeObjectURL(ttsAudioUrl);
     $("voice-note").textContent = "Preparing Thai speech with the selected Windows voice…";
     void invoke<number[]>("synthesize_thai", { text, voiceId: settings.voice.slice(6), rate: Number(speed.value) }).then(bytes => {
-      const blob = new Blob([new Uint8Array(bytes)], { type: "audio/wav" });
-      ttsAudioUrl = URL.createObjectURL(blob);
-      ttsAudio.src = ttsAudioUrl;
-      return ttsAudio.play();
-    }).then(() => {
-      $("voice-note").textContent = "Playing Thai Windows speech.";
-      $("stop-speech").removeAttribute("disabled");
+      playSynthesized(bytes, "Playing Thai Windows speech.");
     }).catch(error => {
       $("voice-note").textContent = "Windows Thai speech failed: " + String(error);
+      finishSpeech();
+    });
+    return;
+  }
+  if (settings.voice === MMS_VOICE) {
+    speechPlaying = true;
+    setRecordingControls(false, false);
+    window.speechSynthesis?.cancel();
+    ttsAudio.pause();
+    $("voice-note").textContent = "Generating local Thai speech with MMS on CPU. First use downloads the optional model.";
+    void invoke<number[]>("synthesize_mms_thai", { text }).then(bytes => {
+      playSynthesized(bytes, "Playing generated local MMS Thai speech (CPU). The text stayed on this PC.");
+    }).catch(error => {
+      $("voice-note").textContent = "Local Thai speech failed: " + String(error);
       finishSpeech();
     });
     return;
@@ -212,6 +234,7 @@ speed.value = String(settings.speed);
 $<HTMLInputElement>("settings-speed").value = String(settings.speed);
 $<HTMLOutputElement>("speed-output").value = `${Number(settings.speed).toFixed(2).replace(/0$/, "")}×`;
 $<HTMLSelectElement>("translation-provider").value = settings.translationProvider;
+$<HTMLInputElement>("model-download-name").value = settings.translationModel || "qwen3.5:4b";
 $<HTMLSelectElement>("hotkey-modifier").value = settings.hotkeyModifier;
 $<HTMLSelectElement>("hotkey-key").value = settings.hotkeyKey;
 renderShortcut();
@@ -231,13 +254,17 @@ $("play-selection").addEventListener("click", () => speak(source.value));
 $("play-current").addEventListener("click", () => speak(sentences[sentenceIndex] ?? ""));
 $("stop-speech").addEventListener("click", () => {
   window.speechSynthesis.cancel();
+  ttsAudio.pause();
   $("stop-speech").setAttribute("disabled", "true");
   $("voice-note").textContent = "Speech stopped.";
 });
 $("previous").addEventListener("click", () => { sentenceIndex = Math.max(0, sentenceIndex - 1); renderSentence(analysis[sentenceIndex]); });
 $("next").addEventListener("click", () => { sentenceIndex = Math.min(analysis.length - 1, sentenceIndex + 1); renderSentence(analysis[sentenceIndex]); });
 document.querySelectorAll<HTMLButtonElement>(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab ?? "words")));
-$("settings-toggle").addEventListener("click", () => { settingsOpen = !settingsOpen; renderViews(); });
+$("settings-toggle").addEventListener("click", () => {
+  settingsOpen = !settingsOpen; renderViews();
+  if (settingsOpen) void refreshOllamaModels();
+});
 $("translation-provider").addEventListener("change", () => {
   settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
   localStorage.setItem(settingsKey, JSON.stringify(settings));
@@ -254,16 +281,24 @@ $("test-offline").addEventListener("click", async () => {
   } catch (error) { $("engine-test-status").textContent = `Failed: ${String(error)}`; }
 });
 $("test-voice").addEventListener("click", () => speak("สวัสดีครับ วันนี้อากาศดี"));
+$("install-mms-voice").addEventListener("click", () => {
+  settings.voice = MMS_VOICE;
+  $<HTMLSelectElement>("voice-select").value = MMS_VOICE;
+  localStorage.setItem(settingsKey, JSON.stringify(settings));
+  speak("สวัสดีครับ วันนี้อากาศดี");
+});
 $("open-mic-test").addEventListener("click", () => showTab("practice"));
 $("pull-model").addEventListener("click", async () => {
   const button = $<HTMLButtonElement>("pull-model"); button.disabled = true;
-  $("provider-status").textContent = "Requesting the optional qwen3:1.7b model from local Ollama… This downloads a large model and may take time.";
+  const model = $<HTMLInputElement>("model-download-name").value.trim();
+  if (!model) { $("provider-status").textContent = "Enter an Ollama model name first."; button.disabled = false; return; }
+  $("provider-status").textContent = `Requesting ${model} from local Ollama… Model downloads can be several gigabytes.`;
   try {
-    await invoke("pull_ollama_model", { model: "qwen3:1.7b" });
-    settings.translationModel = "qwen3:1.7b";
+    await invoke("pull_ollama_model", { model });
+    settings.translationModel = model;
     localStorage.setItem(settingsKey, JSON.stringify(settings));
     await refreshOllamaModels();
-    $("provider-status").textContent = "qwen3:1.7b was downloaded by local Ollama. Select it and save settings to use it.";
+    $("provider-status").textContent = `Ollama finished the ${model} pull; it is available (downloaded or already present) and selected. Run the five reference translations to compare it.`;
   } catch (error) { $("provider-status").textContent = String(error); }
   finally { button.disabled = false; }
 });
@@ -274,10 +309,33 @@ async function refreshOllamaModels(): Promise<void> {
     const models = await invoke<string[]>("ollama_models");
     for (const model of models) select.add(new Option(model, model));
     if (!models.length) select.add(new Option("No local models found", ""));
-    if (models.includes(settings.translationModel)) select.value = settings.translationModel;
+    const preferred = ["qwen3.8-27b-ud-iq3-xxs:ctx32k", "qwen3.5:27b", "qwen3.5:9b-q4_K_M", "qwen3.5:4b"];
+    const chosen = models.includes(settings.translationModel) ? settings.translationModel : preferred.find(model => models.includes(model)) ?? models[0];
+    if (chosen) { select.value = chosen; settings.translationModel = chosen; }
     $("provider-status").textContent = models.length ? `Local Ollama ready · ${models.length} model${models.length === 1 ? "" : "s"} found.` : "Ollama is running, but no local models are installed.";
   } catch (error) { select.add(new Option("Ollama unavailable", "")); $("provider-status").textContent = String(error); }
 }
+$("test-local-translation").addEventListener("click", async () => {
+  const model = $<HTMLSelectElement>("translation-model").value;
+  const button = $<HTMLButtonElement>("test-local-translation");
+  if (!model) { $("provider-status").textContent = "Check Ollama and select an installed model first."; return; }
+  button.disabled = true;
+  const results = $("translation-test-results");
+  results.replaceChildren();
+  $("provider-status").textContent = `Testing ${model} against five attributed ThaiReader v42 examples on local Ollama…`;
+  try {
+    const cases = await invoke<{ thai: string; reference: string; model_output: string }[]>("test_local_translation", { model });
+    for (const item of cases) {
+      const row = document.createElement("div"); row.className = "translation-test-row";
+      const thai = document.createElement("strong"); thai.lang = "th"; thai.textContent = item.thai;
+      const reference = document.createElement("span"); reference.textContent = `Reference: ${item.reference}`;
+      const output = document.createElement("span"); output.textContent = `Model: ${item.model_output}`;
+      row.append(thai, reference, output); results.append(row);
+    }
+    $("provider-status").textContent = `Ran ${cases.length} local translations. Compare each model result with its ThaiReader reference; no automatic accuracy score is claimed.`;
+  } catch (error) { $("provider-status").textContent = `Local translation test failed: ${String(error)}`; }
+  finally { button.disabled = false; }
+});
 $("translate-current").addEventListener("click", async () => {
   const sentence = analysis[sentenceIndex];
   if (!sentence) { $("translation-status").textContent = "Add Thai text first."; return; }

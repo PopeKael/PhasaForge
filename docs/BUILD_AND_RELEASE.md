@@ -12,13 +12,13 @@ cargo test --lib --manifest-path src-tauri/Cargo.toml
 npm run tauri build -- --bundles nsis
 ```
 
-`scripts/build_learner_db.py` verifies every present upstream data file against its published SHA256 manifest and rebuilds `assets/learner.sqlite` from the retained, attributed TSV sources. App code is MIT; the derived learner-data portion has its separate CC BY-SA notice.
+`scripts/build_learner_db.py` verifies the retained ThaiReader SHA256 manifest and the pinned Kaikki JSONL checksum, then rebuilds `assets/learner.sqlite`. The bundled database is a share-alike data derivative; see source attribution and license files before changing or redistributing it. App code remains MIT.
 
-The versioned local 0.2.0 and 0.2.1 deliverables remain under their matching directories. Corrective release 0.2.2 deliverables are under `release-artifacts/0.2.2/`: `PhasaForge.exe`, `PhasaForge_0.2.2_x64-setup.exe`, checksums and UI evidence. These local binaries are ignored by Git; the source and release instructions are committed. The installers are unsigned.
+The 0.3.0 release files and hidden UI evidence are under `release-artifacts/0.3.0/`: `PhasaForge.exe`, `PhasaForge_0.3.0_x64-setup.exe`, checksum manifest, and UI screenshots. Local binaries are ignored by Git; the source and release instructions are committed. The installer is unsigned. The optional MMS model is downloaded separately and is not bundled.
 
 ## Installer smoke test
 
-The Windows CI workflow installs the current-user NSIS package silently, verifies its executable and uninstaller registration, uninstalls it silently, and checks cleanup. The 0.2.1 and 0.2.2 packages passed the local isolated install/uninstall check. The 0.2.2 app window was not launched during installer verification.
+The Windows CI workflow installs the current-user NSIS package silently, verifies its executable and uninstaller registration, uninstalls it silently, and checks cleanup. The acceptance record documents the 0.3.0 local install/uninstall verification.
 
 ## CI
 
