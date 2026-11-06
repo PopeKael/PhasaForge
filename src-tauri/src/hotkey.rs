@@ -1,4 +1,4 @@
-use crate::selection;
+use crate::{diagnostics, selection};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Sender, SyncSender};
 use std::sync::OnceLock;
@@ -75,41 +75,62 @@ pub fn configure(modifier: &str, key: &str) -> Result<(), String> {
 }
 
 pub fn start(app: AppHandle) -> Result<(), String> {
+    let log_path = diagnostics::app_log_path(&app);
+    diagnostics::log(log_path.as_deref(), "hotkey.listener_start");
     let (trigger_tx, trigger_rx) = mpsc::channel::<()>();
     TRIGGER_SENDER
         .set(trigger_tx)
         .map_err(|_| "The hotkey listener is already initialized".to_string())?;
 
+    let action_log_path = log_path.clone();
     thread::Builder::new()
         .name("PhasaForge hotkey actions".to_string())
         .spawn(move || {
             while trigger_rx.recv().is_ok() {
+                diagnostics::log(action_log_path.as_deref(), &format!("hotkey.trigger modifier_vk={} key_vk={}", MODIFIER_KEY.load(Ordering::Relaxed), TRIGGER_KEY.load(Ordering::Relaxed)));
                 wait_for_modifier_release();
-                let captured = selection::selected_text();
+                let captured = selection::selected_text(action_log_path.as_deref());
+                diagnostics::log(action_log_path.as_deref(), &format!("hotkey.capture_returned has_text={} has_bounds={}", captured.text.is_some(), captured.rect.is_some()));
                 if let Some(window) = app.get_webview_window("main") {
                     // Capture first (while the source application still owns focus),
                     // then reveal the reusable popup even if the frontend listener
                     // is recovering from a hidden WebView event delay.
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                    let _ = window.emit("selection-captured", captured);
+                    match window.show() {
+                        Ok(()) => diagnostics::log(action_log_path.as_deref(), "window.show=ok"),
+                        Err(error) => diagnostics::log(action_log_path.as_deref(), &format!("window.show=error detail={error}")),
+                    }
+                    match window.set_focus() {
+                        Ok(()) => diagnostics::log(action_log_path.as_deref(), "window.focus=ok"),
+                        Err(error) => diagnostics::log(action_log_path.as_deref(), &format!("window.focus=error detail={error}")),
+                    }
+                    match window.emit("selection-captured", captured) {
+                        Ok(()) => diagnostics::log(action_log_path.as_deref(), "window.selection_event=ok"),
+                        Err(error) => diagnostics::log(action_log_path.as_deref(), &format!("window.selection_event=error detail={error}")),
+                    }
+                } else {
+                    diagnostics::log(action_log_path.as_deref(), "window.main_missing");
                 }
             }
         })
         .map_err(|error| error.to_string())?;
 
     let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), u32>>(1);
+    let hook_log_path = log_path.clone();
     thread::Builder::new()
         .name("PhasaForge keyboard hook".to_string())
-        .spawn(move || unsafe { run_hook_thread(ready_tx) })
+        .spawn(move || unsafe { run_hook_thread(ready_tx, hook_log_path.as_deref()) })
         .map_err(|error| error.to_string())?;
 
     match ready_rx.recv_timeout(Duration::from_secs(3)) {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(code)) => Err(format!(
-            "SetWindowsHookExW failed with Windows error {code}"
-        )),
-        Err(error) => Err(format!("The keyboard hook did not initialize: {error}")),
+        Ok(Ok(())) => { diagnostics::log(log_path.as_deref(), "hotkey.hook_ready"); Ok(()) },
+        Ok(Err(code)) => {
+            diagnostics::log(log_path.as_deref(), &format!("hotkey.hook_failed win32={code}"));
+            Err(format!("SetWindowsHookExW failed with Windows error {code}"))
+        }
+        Err(error) => {
+            diagnostics::log(log_path.as_deref(), &format!("hotkey.hook_init_timeout error={error}"));
+            Err(format!("The keyboard hook did not initialize: {error}"))
+        }
     }
 }
 
@@ -122,15 +143,17 @@ pub fn stop() {
     }
 }
 
-unsafe fn run_hook_thread(ready: SyncSender<Result<(), u32>>) {
+unsafe fn run_hook_thread(ready: SyncSender<Result<(), u32>>, log_path: Option<&std::path::Path>) {
     let module = GetModuleHandleW(std::ptr::null());
     if module.is_null() {
+        diagnostics::log(log_path, &format!("hotkey.module_handle_failed win32={}", GetLastError()));
         let _ = ready.send(Err(GetLastError()));
         return;
     }
 
     let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(low_level_keyboard_proc), module, 0);
     if hook.is_null() {
+        diagnostics::log(log_path, &format!("hotkey.set_hook_failed win32={}", GetLastError()));
         let _ = ready.send(Err(GetLastError()));
         return;
     }
@@ -138,6 +161,7 @@ unsafe fn run_hook_thread(ready: SyncSender<Result<(), u32>>) {
     let thread_id = GetCurrentThreadId();
     HOOK_THREAD_ID.store(thread_id, Ordering::Relaxed);
     HOOK_ACTIVE.store(true, Ordering::Relaxed);
+    diagnostics::log(log_path, "hotkey.message_loop_start");
     let _ = ready.send(Ok(()));
 
     let mut message: MSG = std::mem::zeroed();
@@ -153,6 +177,7 @@ unsafe fn run_hook_thread(ready: SyncSender<Result<(), u32>>) {
     HOOK_THREAD_ID.store(0, Ordering::Relaxed);
     HOOK_ACTIVE.store(false, Ordering::Relaxed);
     let _ = UnhookWindowsHookEx(hook);
+    diagnostics::log(log_path, "hotkey.message_loop_stop");
 }
 
 unsafe extern "system" fn low_level_keyboard_proc(
@@ -232,6 +257,14 @@ fn wait_for_modifier_release() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::VK_PRIOR;
+
+    #[test]
+    fn configured_right_control_up_uses_up_not_page_up() {
+        assert_eq!(modifier_code("right_ctrl"), Some(VK_CONTROL_RIGHT));
+        assert_eq!(key_code("up"), Some(VK_UP as u32));
+        assert_ne!(key_code("up"), Some(VK_PRIOR as u32));
+    }
 
     #[test]
     fn distinguishes_left_and_right_control_from_windows_flags() {

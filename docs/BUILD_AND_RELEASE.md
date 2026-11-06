@@ -8,17 +8,17 @@ Prerequisites: Windows 11 x64, stable Rust MSVC toolchain, Node.js/npm, Microsof
 npm ci
 npm run build
 npm run test:ui
-cargo test --manifest-path src-tauri/Cargo.toml
+cargo test --lib --manifest-path src-tauri/Cargo.toml
 npm run tauri build -- --bundles nsis
 ```
 
 `scripts/build_learner_db.py` verifies every present upstream data file against its published SHA256 manifest and rebuilds `assets/learner.sqlite` from the retained, attributed TSV sources. App code is MIT; the derived learner-data portion has its separate CC BY-SA notice.
 
-The versioned local 0.2.0 deliverables are under `release-artifacts/0.2.0/`: `PhasaForge.exe`, `PhasaForge_0.2.0_x64-setup.exe`, and UI verification screenshots. These local binaries are ignored by Git; the source and release instructions are committed. The installers are unsigned.
+The versioned local 0.2.0 deliverables remain under `release-artifacts/0.2.0/`. Corrective release 0.2.1 deliverables are under `release-artifacts/0.2.1/`: `PhasaForge.exe`, `PhasaForge_0.2.1_x64-setup.exe`, and test evidence. These local binaries are ignored by Git; the source and release instructions are committed. The installers are unsigned.
 
 ## Installer smoke test
 
-The Windows CI workflow installs the current-user NSIS package silently, verifies its executable and uninstaller registration, uninstalls it silently, and checks cleanup. The 0.2.0 package received the same local isolated install/uninstall check. The app window was not launched during that check.
+The Windows CI workflow installs the current-user NSIS package silently, verifies its executable and uninstaller registration, uninstalls it silently, and checks cleanup. The 0.2.1 package passed the same local isolated install/uninstall check. The app window was not launched during that check.
 
 ## CI
 

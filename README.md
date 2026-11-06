@@ -1,8 +1,8 @@
 # PhasaForge
 
-PhasaForge is a free, compact Windows Thai study popup. Version 0.2.0 turns selected or pasted Thai into offline sentence analysis and clickable word cards within the 640×480 window.
+PhasaForge is a free, compact Windows Thai study popup. Version 0.2.1 turns selected or pasted Thai into offline sentence analysis and clickable word cards within the 640×480 window.
 
-## What 0.2.0 does
+## What 0.2.1 does
 
 - Splits sentences and Thai words with [Khám](https://crates.io/crates/kham-core), using the bundled ThaiReader vocabulary as an additional segmentation dictionary.
 - Looks up learner meanings, Paiboon+ readings, syllable divisions, examples, source notes and confidence in an embedded SQLite database. The first run copies the database to the user's Windows application-data directory; saved corrections remain local and survive app updates.
@@ -11,6 +11,7 @@ PhasaForge is a free, compact Windows Thai study popup. Version 0.2.0 turns sele
 - Plays speech through installed Windows Thai voices, with a Thai-only Web Speech fallback. This PC previously exposed no Thai voice; see the current acceptance record for what was tested in this release.
 - Preserves local microphone recording and replay. Thai ASR and pronunciation scoring are not included in this release.
 - Enforces one running instance. The default Right Ctrl + Up hotkey captures first, then opens/focuses the popup. The tray menu and window dragging remain.
+- Avoids the 0.2.0 Opera clipboard crash by never flushing a foreign OLE data object; see the [Issue #4 crash analysis and test limits](docs/ISSUE_4.md). Diagnostic logs omit selected text.
 
 The project uses no paid provider. Offline dictionary lookups and exact sentence examples need no network. Local model translation is optional and requires Ollama plus a downloaded model. No Ollama model or third-party lesson media is bundled.
 
@@ -45,6 +46,7 @@ The audio/video library at `D:\Music\Thai Language` remains reference-only. No l
 - [Architecture](docs/ARCHITECTURE.md)
 - [Build and release](docs/BUILD_AND_RELEASE.md)
 - [Acceptance record](docs/ACCEPTANCE_TESTS.md)
+- [Issue #4 crash analysis](docs/ISSUE_4.md)
 - [Dependency and reuse review](docs/DEPENDENCIES.md)
 - [Changelog](CHANGELOG.md)
 

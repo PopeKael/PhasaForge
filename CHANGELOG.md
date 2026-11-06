@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — Opera selection crash repair
+
+- Fixed the reported Opera crash in selection fallback: WER recorded `ole32.dll` with exception `0xC000041D` twice. Removed restoration through a foreign OLE clipboard data object and `OleFlushClipboard`, which can invoke delayed-render callbacks into the source application.
+- Clipboard fallback now snapshots/restores only an empty clipboard or a single Unicode-text format. It leaves rich/multiple-format clipboard contents untouched, checks for concurrent clipboard changes, and never logs selected text.
+- Added per-stage, privacy-safe hotkey/UI Automation/clipboard/window diagnostics at the app data `logs/hotkey.log` path.
+- Added regression tests for Right Ctrl + Up (VK_UP, not Page Up), rich clipboard preservation policy, and Thai UTF-16 clipboard round trips.
+
 ## 0.2.0 — Thai teaching flow
 
 - Added offline Thai sentence and word segmentation with Khám and an embedded SQLite learner dictionary containing 5,111 words, 7,552 senses and 15,962 attributed examples.

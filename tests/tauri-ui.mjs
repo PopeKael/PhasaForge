@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -9,9 +9,11 @@ import { tmpdir } from "node:os";
 // focus or consume keyboard input from the user's desktop.
 const root = resolve(".");
 const scratch = await mkdtemp(join(tmpdir(), "phasaforge-tauri-ui-"));
-const appData = join(scratch, "Roaming"); await mkdir(appData, { recursive: true });
+const appData = join(scratch, "Roaming"); const localAppData = join(scratch, "Local");
+await mkdir(appData, { recursive: true }); await mkdir(localAppData, { recursive: true });
 const port = "9227";
-const env = { ...process.env, APPDATA: appData, PHASAFORGE_TEST_MODE: "1", WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+const testAppData = join(scratch, "AppData");
+const env = { ...process.env, APPDATA: appData, LOCALAPPDATA: localAppData, PHASAFORGE_TEST_MODE: "1", PHASAFORGE_TEST_APP_DATA: testAppData, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
   CARGO_HOME: join(root, "src-tauri", ".cargo-home"), CARGO_TARGET_DIR: "C:\\Users\\Warren\\.codex\\visualizations\\2026\\11\\05\\01a1a999-114b-7ac1-9369-76c805915ca1\\phasaforge-target" };
 const processUnderTest = spawn("npm.cmd", ["run", "tauri", "--", "dev", "--config", "src-tauri/tauri.test.conf.json"], { cwd: root, env, windowsHide: true, stdio: "ignore", shell: true });
 let cdp;
@@ -45,6 +47,23 @@ async function connect(wsUrl) {
     }, close() { socket.close(); },
   };
 }
+async function findFile(directory, name) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isFile() && entry.name === name) return path;
+    if (entry.isDirectory()) { const found = await findFile(path, name); if (found) return found; }
+  }
+  return null;
+}
+async function listFiles(directory) {
+  const result = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isFile()) result.push(path);
+    else if (entry.isDirectory()) result.push(...await listFiles(path));
+  }
+  return result;
+}
 
 try {
   const targets = await waitFor(async () => {
@@ -72,7 +91,7 @@ try {
   assert.match(word, /vegetable/i); assert.match(word, /pàk/i); assert.match(word, /low tone/i);
   const voices = await evaluate("window.__TAURI_INTERNALS__.invoke('list_thai_voices')");
   const voiceUi = await evaluate("({choices:[...document.querySelector('#voice-select').options].map(o=>o.text),note:document.querySelector('#voice-note').textContent})");
-  const output = join(root, "release-artifacts", "0.2.0", "ui-verification"); await mkdir(output, { recursive: true });
+  const output = join(root, "release-artifacts", "0.2.1", "ui-verification"); await mkdir(output, { recursive: true });
   const capture = async name => { const shot = await cdp.call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false }); await writeFile(join(output, name), Buffer.from(shot.data, "base64")); };
   await capture("tauri-words-640x480.png");
   await evaluate("document.querySelector('#settings-toggle').click()");
@@ -80,8 +99,13 @@ try {
   assert.equal(settings.hidden, false); assert.equal(settings.scroll, true); assert.equal(settings.width, 640); assert.equal(settings.height, 480);
   await evaluate("document.querySelector('#test-offline').click()");
   await waitFor(async () => (await evaluate("document.querySelector('#engine-test-status').textContent"))?.startsWith("Passed"));
+  const diagnosticLog = await findFile(testAppData, "hotkey.log");
+  assert.ok(diagnosticLog, `startup should write the privacy-safe diagnostic log under app data; found files: ${JSON.stringify(await listFiles(scratch))}`);
+  const diagnosticText = await readFile(diagnosticLog, "utf8");
+  assert.match(diagnosticText, /app\.start version=0\.2\.1/);
+  assert.doesNotMatch(diagnosticText, new RegExp(sample));
   await capture("tauri-settings-640x480.png");
-  console.log(JSON.stringify({ size: "640×480", sample: analysis, clickedWord: word, engineTest: await evaluate("document.querySelector('#engine-test-status').textContent"), settings, installedThaiWinRtVoices: voices.length, voiceUi, screenshots: output }, null, 2));
+  console.log(JSON.stringify({ size: "640×480", sample: analysis, clickedWord: word, engineTest: await evaluate("document.querySelector('#engine-test-status').textContent"), settings, installedThaiWinRtVoices: voices.length, voiceUi, diagnosticLog, screenshots: output }, null, 2));
 } finally {
   cdp?.close();
   const killer = spawn("taskkill.exe", ["/PID", String(processUnderTest.pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });

@@ -5,6 +5,7 @@ use tauri::{
 };
 
 mod hotkey;
+mod diagnostics;
 mod language;
 mod selection;
 mod speech;
@@ -39,9 +40,12 @@ pub fn run() {
         }))
         .setup(|app| {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
+            let log_path = diagnostics::app_log_path(app.handle());
+            diagnostics::log(log_path.as_deref(), "app.start version=0.2.1");
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
             if !test_mode {
                 if let Err(error) = hotkey::start(app.handle().clone()) {
+                    diagnostics::log(log_path.as_deref(), &format!("hotkey.start_failed detail={error}"));
                     eprintln!("Could not install the Right Ctrl + Up listener; PhasaForge remains available from its tray: {error}");
                 }
                 let open = MenuItem::with_id(app, "open", "Open PhasaForge", true, None::<&str>)?;

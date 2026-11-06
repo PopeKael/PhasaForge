@@ -2,7 +2,7 @@ use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::{path::PathBuf, sync::Mutex, time::Duration};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 const SEED_DB: &[u8] = include_bytes!("../../assets/learner.sqlite");
 const SEED_VERSION: i64 = 43;
@@ -42,7 +42,7 @@ pub struct SentenceCard {
 }
 
 pub fn open(app: &AppHandle) -> Result<LanguageState, String> {
-    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let dir = crate::diagnostics::app_data_dir(app).ok_or_else(|| "Cannot resolve local app-data folder".to_string())?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("Cannot create local data folder: {e}"))?;
     let path = dir.join("phasaforge.sqlite");
     if !path.exists() { std::fs::write(&path, SEED_DB).map_err(|e| format!("Cannot install offline Thai dictionary: {e}"))?; }
