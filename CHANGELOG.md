@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2 — compact reading layout
+
+- Increased the Selected Text area and Current Sentence panel height, with larger Thai text and wrapped pronunciation/meaning lines.
+- Compacted the speech buttons and speed controls while preserving playback and speed behavior.
+- Replaced the Meaning tab's provider-first notes with a large, wrapping, scrollable English translation; moved provider/source information into a collapsed Translation details section and Settings.
+- Preserved the fixed 640×480 window and all existing tabs and actions.
+- Added a hidden-window layout regression check for short and long Thai passages, long English wrapping, panel sizing, speech controls, and scroll behavior.
+
 ## 0.3.1 — automatic Azure F0 translation
 
 - Added automatic sentence translation through the configured Southeast Asia Azure Translator F0 resource, alongside instant offline sentence examples and SQLite word analysis.

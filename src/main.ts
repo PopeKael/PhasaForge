@@ -53,6 +53,7 @@ function renderSentence(card: SentenceCard | undefined): void {
   $("passage-count").textContent = `${analysis.length ? sentenceIndex + 1 : 0} of ${analysis.length}`;
   $("romanization").textContent = current ? `Pronunciation: ${card?.reading || "Thai words not detected"}` : "Pronunciation appears with the word breakdown.";
   $("meaning-line").textContent = card?.meaning ? `Meaning: ${card.meaning}` : "Meaning: translation pending…";
+  $("translation-english").textContent = card?.meaning ?? (current ? "Translation pending…" : "The sentence meaning will appear here.");
   $("translation-source").textContent = card?.meaning_source ? `Source: ${card.meaning_source}. Dictionary meanings are learner-drafted and may need checking.` : "Translation is automatic. Exact offline examples appear instantly; new text uses the selected provider.";
   renderWords(card?.words ?? []);
   localStorage.setItem(selectedKey, source.value);

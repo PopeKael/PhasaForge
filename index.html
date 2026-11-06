@@ -26,9 +26,9 @@
           </div>
           <div class="audio-panel">
             <div class="play-row">
-              <button id="play-selection" class="primary-button">▶ <span>Play</span></button>
-              <button id="play-current" class="secondary-button">▶| <span>Play Current<br />Sentence</span></button>
-              <button id="stop-speech" class="secondary-button stop-button" disabled>■ <span>Stop</span></button>
+              <button id="play-selection" class="primary-button" aria-label="Play selected Thai text">▶ <span>Play</span></button>
+              <button id="play-current" class="secondary-button" aria-label="Play current sentence">▶| <span>Current<br />sentence</span></button>
+              <button id="stop-speech" class="secondary-button stop-button" aria-label="Stop Thai speech" disabled>■ <span>Stop</span></button>
             </div>
             <div class="speed-head"><span>Thai Speech Speed</span><output id="speed-output">0.75×</output></div>
             <div class="speed-row"><span>Slow</span><input id="speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /><span>Fast</span></div>
@@ -41,9 +41,11 @@
             <strong>Current Sentence</strong><span id="sentence-position">(Sentence 0 of 0)</span>
             <div class="passage-nav"><button id="previous" aria-label="Previous sentence">‹</button><span id="passage-count">0 of 0</span><button id="next" aria-label="Next sentence">›</button></div>
           </div>
-          <div class="thai-focus" id="thai-focus">Paste a Thai passage to begin.</div>
-          <div class="romanization" id="romanization">Romanisation is not generated yet.</div>
-          <div class="meaning-line" id="meaning-line">Meaning: add a translation when one is available.</div>
+          <div class="focus-details">
+            <div class="thai-focus" id="thai-focus">Paste a Thai passage to begin.</div>
+            <div class="romanization" id="romanization">Romanisation is not generated yet.</div>
+            <div class="meaning-line" id="meaning-line">Meaning: add a translation when one is available.</div>
+          </div>
         </section>
 
         <nav id="tabs" class="tabs" role="tablist" aria-label="Learning views">
@@ -52,12 +54,10 @@
           <button data-tab="practice" class="tab" role="tab" aria-selected="false">Practice</button>
         </nav>
 
-        <section class="tab-content" id="meaning-view" hidden>
-          <h2>Meaning</h2>
-          <p id="translation-source" class="muted">Exact offline example matches and their sources are shown here. Other sentences are not silently guessed.</p>
-          <p class="muted">Sentence translation starts automatically after local word analysis. Azure F0 is capped below its free monthly allowance; Ollama can act as an optional fallback.</p>
-          <button id="translate-current" class="secondary-button small">Retry current sentence</button>
-          <span id="translation-status" class="muted"></span>
+        <section class="tab-content meaning-view" id="meaning-view" hidden>
+          <div class="meaning-heading"><h2>English meaning</h2><span id="translation-status" class="muted" role="status"></span></div>
+          <article class="meaning-card" aria-live="polite"><p id="translation-english">The sentence meaning will appear here.</p></article>
+          <details class="translation-details"><summary>Translation details</summary><p id="translation-source" class="muted">Stored sentence examples are shown with their source. New sentences are translated automatically when a provider is configured.</p><p class="muted">Machine translations can miss nuance. Provider, quota and connection information is in Settings.</p><button id="translate-current" class="secondary-button small">Retry translation</button></details>
         </section>
 
         <section class="tab-content words-view" id="words-view">
@@ -84,7 +84,7 @@
           <label class="setting-row">Ollama model<select id="translation-model"><option value="">Check local models…</option></select></label>
           <label class="setting-row">Model to download <input id="model-download-name" type="text" value="qwen3.5:4b" placeholder="e.g. qwen3.5:4b" /></label>
           <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download model</button><button id="test-local-translation" class="secondary-button small">Test 5 references</button></div>
-          <p id="provider-status" class="muted" role="status">Azure F0 translates automatically using the free monthly quota. Its key stays in Windows Credential Manager. Set an Ollama model to enable fallback when Azure is unavailable.</p>
+          <p id="provider-status" class="muted" role="status">Azure F0 translates automatically using the free monthly quota and a 1.9M character safety cap. Its key stays in Windows Credential Manager. Ollama can be selected as an optional local fallback when Azure is unavailable.</p>
           <div id="translation-test-results" class="translation-test-results" aria-live="polite"></div>
           <div class="setting-actions"><button id="test-offline" class="secondary-button small">Test offline Thai engine</button><span id="engine-test-status" class="muted" role="status"></span></div>
           <h3>Local knowledge base</h3>
@@ -110,7 +110,7 @@
         </section>
         <audio id="recorded-audio" hidden></audio>
       </main>
-      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.3.1</span></footer>
+      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.3.2</span></footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

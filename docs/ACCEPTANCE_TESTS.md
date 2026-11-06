@@ -1,5 +1,15 @@
 # Acceptance record
 
+## Version 0.3.2 — compact reading layout
+
+| Check | Result | Evidence |
+|---|---|---|
+| Layout and readability | Passed, hidden Tauri window | At 640×480, Selected Text is 116 px high with 15 px Thai text; Current Sentence is 118 px high with 16 px Thai, wrapped 12 px pronunciation, and wrapped 13 px English summary. Play, Current sentence, Stop, and speed controls remain present. Meaning is 18 px and scrollable; provider details start collapsed. |
+| Short Thai example | Passed, hidden Tauri window | `เราเดินดูของหลายอย่าง ทั้งผัก ผลไม้ และอาหารพื้นบ้าน` produced 12 clickable words, tone-marked pronunciation, and the exact stored meaning “We looked at many kinds of things, including vegetables, fruits, and local food.” |
+| Long Thai and English | Passed, hidden Tauri window | A 211-character unfamiliar passage produced 48 words and a 416-character pronunciation line. Azure returned a 259-character English meaning; the Meaning card wraps and scrolls without losing the translation. The hidden screenshot is in `release-artifacts/0.3.2/ui-check/long.png`. |
+| TypeScript/Vite and Rust tests | Passed | Production frontend build; 5 UI tests; 10 Rust library tests; dedicated hidden layout test including real Azure auto-translation for short and long examples. |
+| NSIS installer | Passed, silent | Built `PhasaForge_0.3.2_x64-setup.exe`; silently installed to an isolated temporary directory, confirmed `PhasaForge.exe` reports ProductVersion 0.3.2, then silently uninstalled. |
+
 ## Version 0.3.1 — Azure Translator F0 automatic translation
 
 | Check | Result | Evidence |
