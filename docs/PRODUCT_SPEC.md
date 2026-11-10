@@ -25,4 +25,4 @@ ThaiReader v42 is the dictionary/example source; its senses are carefully drafte
 
 ## Later work requiring separate acceptance
 
-Thai offline speech recognition, pronunciation scoring, signing/update delivery, and independent live multi-monitor/DPI verification are not claimed as 0.2.0 features. The Windows `SpeechRecognizer` API requires package identity and some topic grammars use a web service; this project currently builds an unpackaged NSIS installer. See [Acceptance Tests](ACCEPTANCE_TESTS.md).
+Thai offline speech recognition was introduced as an optional after-recording baseline in 0.3.5. Live interim transcription, pronunciation and tone scoring, signing/update delivery, and independent live multi-monitor/DPI verification remain separate work. The Windows `SpeechRecognizer` API requires package identity and some topic grammars use a web service; this project currently builds an unpackaged NSIS installer. See [Acceptance Tests](ACCEPTANCE_TESTS.md).

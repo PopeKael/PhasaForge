@@ -15,7 +15,7 @@
           <span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd>
           <span class="titlebar-separator">|</span>
           <span class="titlebar-hint">Opens near your selection and stays on-screen</span>
-          <span class="version">v0.3.4</span>
+          <span class="version">v0.4.1</span>
         </div>
         <div class="window-actions">
           <button id="settings-toggle" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
@@ -76,41 +76,63 @@
 
         <section class="tab-content practice-view" id="practice-view" hidden>
           <div class="practice-actions"><button id="record" class="primary-button">● <span>Record</span></button><button id="stop-record" class="secondary-button" disabled>■ <span>Stop</span></button><button id="play-recording" class="secondary-button" disabled>▶ <span>Replay</span></button><button id="record-again" class="secondary-button" disabled>↻ <span>Record Again</span></button></div>
-          <div id="practice-status" role="status">Microphone is idle. Recording stays on this device. Thai transcription is only available when a supported local recognizer is configured.</div>
-          <div class="heard-label">What the recogniser heard</div><div id="heard-text" class="heard-text">—</div>
-          <p class="muted small-copy">Speech recognition feedback is not pronunciation grading. A transcription match alone cannot verify tones or pronunciation.</p>
+          <div id="practice-status" role="status">Microphone is idle. On first use, speech recognition prepares automatically after Stop, then transcribes that recording locally.</div>
+          <div class="practice-comparison">
+            <section class="practice-result"><div class="heard-label">Recognised Thai</div><div id="heard-text" class="heard-text" lang="th">—</div></section>
+            <section class="practice-result"><div class="heard-label">English translation</div><div id="heard-translation" class="heard-translation">Translation will appear after recognition.</div><div id="heard-translation-status" class="muted small-copy" role="status"></div></section>
+          </div>
+          <p class="muted small-copy">Compare the recognized Thai and English with the sentence above. Transcription and translation do not score pronunciation or tones.</p>
         </section>
 
         <section class="tab-content settings-view" id="settings-view" hidden>
-          <h2>Settings</h2>
+          <div class="setup-heading"><div><h2>First-time setup</h2><p class="muted">Run this again whenever you add a feature or need to repair its setup. Core reading works without optional downloads.</p></div><button id="finish-setup" class="secondary-button small">Continue to PhasaForge</button></div>
+          <section class="setup-card" aria-labelledby="setup-checklist-title">
+            <h3 id="setup-checklist-title">What you need to do for Practice</h3>
+            <p id="translation-setup-status" role="status">Checking the saved Azure Translator setting…</p>
+            <p><span class="setup-state next-step">Practice</span> The first time you record and press Stop, PhasaForge prepares its separate Thai speech recognizer (one-time download, about 150 MB extracted) and transcribes that same recording. Python 3.10+ and internet are required.</p>
+            <p>The Ollama model you selected is for text translation. It does not prepare or run speech recognition.</p>
+          </section>
           <h3>Thai text and translation</h3>
-          <label class="setting-row">Translation provider<select id="translation-provider"><option value="azure">Azure Translator F0 · automatic · free tier</option><option value="ollama">Local Ollama model</option><option value="offline">Offline examples (no network)</option></select></label>
-          <label class="setting-row">Azure F0 key <input id="azure-key" type="password" autocomplete="new-password" placeholder="Paste key1/key2; saved to Windows Credential Manager" /></label>
-          <div class="setting-actions"><button id="save-azure-key" class="secondary-button small">Save F0 key securely</button><button id="test-azure-translation" class="secondary-button small">Test 5 translations</button></div>
-          <label class="setting-row">Ollama model<select id="translation-model"><option value="">Check local models…</option></select></label>
-          <label class="setting-row">Model to download <input id="model-download-name" type="text" value="qwen3.5:4b" placeholder="e.g. qwen3.5:4b" /></label>
-          <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download model</button><button id="test-local-translation" class="secondary-button small">Test 5 references</button></div>
+          <p class="setup-instruction">Azure F0 is the normal translator for this app. The saved key is checked automatically. Leave this section as it is unless you want to change translation providers.</p>
+          <label class="setting-row"><span class="setting-label">Translation provider <button class="help-tip" type="button" title="Azure F0 is the normal provider and is already configured on this PC. Choose Local Ollama only if you want to run translation on this PC instead." aria-label="Translation provider help">?</button></span><select id="translation-provider"><option value="azure">Azure Translator F0 · automatic · free tier</option><option value="ollama">Local Ollama · optional</option><option value="offline">Offline examples only</option></select></label>
+          <div id="azure-provider-controls">
+            <button id="replace-azure-key" class="secondary-button small" hidden>Replace saved Azure key</button>
+            <div id="azure-key-editor" hidden><label class="setting-row"><span class="setting-label">Azure F0 key <button class="help-tip" type="button" title="Only enter a key if the status says no key is saved, or if you are replacing it. It is stored securely in Windows Credential Manager." aria-label="Azure key help">?</button></span><input id="azure-key" type="password" autocomplete="new-password" placeholder="Only needed if no saved key is detected" /></label><button id="save-azure-key" class="secondary-button small">Save F0 key securely</button></div>
+            <button id="test-azure-translation" class="secondary-button small">Test 5 translations</button>
+          </div>
+          <p id="ollama-discovery-status" class="muted setup-instruction" role="status">Checking this PC for Ollama and installed models…</p>
+          <div id="ollama-model-controls" hidden>
+            <p class="setup-instruction">Select a model that Ollama lists on this PC, then click Save Settings. PhasaForge starts it and keeps it loaded so local translation is ready. The model uses system memory or GPU memory while loaded.</p>
+            <label class="setting-row"><span class="setting-label">Installed local model <button class="help-tip" type="button" title="Select an Ollama model that is already installed on this PC." aria-label="Ollama model help">?</button></span><select id="translation-model"><option value="">Check local models…</option></select></label>
+            <p id="ollama-residency-status" class="muted setup-instruction" role="status">Checking Ollama's loaded models…</p>
+            <label class="setting-row"><span class="setting-label">Model name to download <button class="help-tip" type="button" title="Type the Ollama model tag you want. Nothing is preselected or downloaded for you; downloads may be several GB." aria-label="Model download help">?</button></span><input id="model-download-name" type="text" placeholder="Type a model tag, e.g. qwen3.5:4b" /></label>
+            <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download model</button><button id="test-local-translation" class="secondary-button small">Test 5 references</button></div>
+          </div>
           <p id="provider-status" class="muted" role="status">Azure F0 translates automatically using the free monthly quota and a 1.9M character safety cap. Its key stays in Windows Credential Manager. Ollama can be selected as an optional local fallback when Azure is unavailable.</p>
           <div id="translation-test-results" class="translation-test-results" aria-live="polite"></div>
           <div class="setting-actions"><button id="test-offline" class="secondary-button small">Test offline Thai engine</button><span id="engine-test-status" class="muted" role="status"></span></div>
           <h3>Local knowledge base</h3>
-          <label class="setting-row">SQLite file <input id="database-path" type="text" readonly /></label>
+          <p class="setup-instruction">The bundled Thai dictionary and examples are already installed. No action is needed here. Use the correction boxes only when you want to override a word’s meaning or reading for yourself.</p>
+          <label class="setting-row"><span class="setting-label">SQLite file <button class="help-tip" type="button" title="This is PhasaForge's local dictionary and corrections database. It is managed by the app." aria-label="SQLite file help">?</button></span><input id="database-path" type="text" readonly /></label>
           <button id="refresh-dictionary" class="secondary-button small">Refresh bundled Thai data</button><span id="dictionary-update-status" class="muted" role="status"></span>
-          <label class="setting-row">Correct a word <input id="correction-word" type="text" lang="th" placeholder="Thai word" /></label>
-          <label class="setting-row">Meaning <input id="correction-meaning" type="text" placeholder="Your meaning" /></label>
-          <label class="setting-row">Paiboon+ reading <input id="correction-reading" type="text" placeholder="Optional; e.g. sà-wàt-dee" /></label>
+          <label class="setting-row"><span class="setting-label">Correct a word <button class="help-tip" type="button" title="Enter the Thai word exactly as it appears. Your correction is saved locally and takes priority in word lookup." aria-label="Correction word help">?</button></span><input id="correction-word" type="text" lang="th" placeholder="Thai word" /></label>
+          <label class="setting-row"><span class="setting-label">Meaning <button class="help-tip" type="button" title="Enter the English meaning you want shown for this word." aria-label="Meaning help">?</button></span><input id="correction-meaning" type="text" placeholder="Your meaning" /></label>
+          <label class="setting-row"><span class="setting-label">Paiboon+ reading <button class="help-tip" type="button" title="Optional pronunciation guide in Paiboon+ style, for example sà-wàt-dee." aria-label="Reading help">?</button></span><input id="correction-reading" type="text" placeholder="Optional; e.g. sà-wàt-dee" /></label>
           <button id="save-correction" class="secondary-button small">Save local correction</button><span id="correction-status" class="muted"></span>
           <h3>Thai playback</h3>
-          <label class="setting-row">Shortcut modifier<select id="hotkey-modifier"><option value="right_ctrl">Right Ctrl</option><option value="left_ctrl">Left Ctrl</option><option value="right_alt">Right Alt</option><option value="left_alt">Left Alt</option></select></label>
-          <label class="setting-row">Shortcut key<select id="hotkey-key"><option value="up">Up Arrow</option><option value="down">Down Arrow</option><option value="space">Space</option></select></label>
+          <p class="setup-instruction">The app uses an installed Windows Thai voice when one is available. Test it below; the MMS download is optional and needs Python packages and additional storage.</p>
+          <label class="setting-row"><span class="setting-label">Shortcut modifier <button class="help-tip" type="button" title="Choose which Ctrl or Alt key begins the selected-text shortcut." aria-label="Shortcut modifier help">?</button></span><select id="hotkey-modifier"><option value="right_ctrl">Right Ctrl</option><option value="left_ctrl">Left Ctrl</option><option value="right_alt">Right Alt</option><option value="left_alt">Left Alt</option></select></label>
+          <label class="setting-row"><span class="setting-label">Shortcut key <button class="help-tip" type="button" title="Choose the second key pressed with the modifier to open PhasaForge on selected text." aria-label="Shortcut key help">?</button></span><select id="hotkey-key"><option value="up">Up Arrow</option><option value="down">Down Arrow</option><option value="space">Space</option></select></label>
           <p class="muted" id="hotkey-status">Only the chosen shortcut is used; unrelated keys pass through. No other keyboard input is stored.</p>
-          <label class="setting-row">Thai voice<select id="voice-select"><option value="">No Thai voice detected</option></select></label>
+          <label class="setting-row"><span class="setting-label">Thai voice <button class="help-tip" type="button" title="Choose an installed Windows/WebView Thai voice, or the optional local MMS voice." aria-label="Thai voice help">?</button></span><select id="voice-select"><option value="">No Thai voice detected</option></select></label>
           <button id="test-voice" class="secondary-button small">Test selected Thai voice</button>
           <button id="install-mms-voice" class="secondary-button small">Download + test local Thai voice</button>
           <p class="muted" id="voice-setup-note">Local MMS Thai speech runs on CPU; first use downloads the optional model to app data. Requires Python 3.10+ with torch, transformers, and numpy. Model license: CC BY-NC 4.0 (non-commercial use only). Text stays on this PC.</p>
-          <label class="setting-row">Thai playback speed<input id="settings-speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /></label>
+          <label class="setting-row"><span class="setting-label">Thai playback speed <button class="help-tip" type="button" title="Adjust playback speed. Slower playback can make it easier to hear syllables." aria-label="Playback speed help">?</button></span><input id="settings-speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /></label>
           <h3>Speech recognition</h3>
-          <p id="asr-status" class="muted">Thai offline recognition is not configured. Recording and replay remain available; no transcript or score is fabricated.</p>
+          <p class="setup-instruction">Practice prepares this separate Thai speech model automatically the first time you stop a recording. You can download it here in advance instead. Requires Python 3.10+ and internet; your recorded audio is kept and transcribed after setup.</p>
+          <p id="asr-status" class="muted" role="status">Checking local Thai recognition…</p>
+          <button id="prepare-thai-asr" class="secondary-button small">Prepare Practice speech recognition now</button>
           <button id="open-mic-test" class="secondary-button small">Open microphone recording test</button>
           <div class="setting-actions"><button id="save-settings" class="primary-button">Save Settings</button><span id="settings-saved" class="muted"></span></div>
         </section>

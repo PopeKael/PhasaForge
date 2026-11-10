@@ -12,6 +12,8 @@ const source = $<HTMLTextAreaElement>("source-text");
 const speed = $<HTMLInputElement>("speed");
 const selectedKey = "phasaforge.selected-text";
 const settingsKey = "phasaforge.settings";
+const setupSeenKey = "phasaforge.setup-seen.0.4.1";
+const translationDefaultKey = "phasaforge.translation-default.0.3.5";
 const MMS_VOICE = "mms:facebook/mms-tts-tha";
 let sentences: string[] = [];
 let sentenceIndex = 0;
@@ -20,11 +22,17 @@ let recordedChunks: Blob[] = [];
 let stream: MediaStream | undefined;
 let recordingUrl: string | undefined;
 let activeTab = "words";
-let settingsOpen = false;
+let settingsOpen = !localStorage.getItem(setupSeenKey);
 let nativeThaiVoices: { id: string; name: string; language: string }[] = [];
 let nativeVoiceDiscoveryComplete = false;
 let ttsAudioUrl: string | undefined;
 let speechPlaying = false;
+let thaiAsrReady = false;
+let lastRecordingBlob: Blob | undefined;
+let transcriptionInProgress = false;
+let thaiAsrPreparation: Promise<void> | undefined;
+let ollamaDiscovery: OllamaDiscovery | undefined;
+let ollamaStoreRepairAttempted = false;
 const ttsAudio = document.createElement("audio");
 ttsAudio.id = "native-speech-audio";
 ttsAudio.hidden = true;
@@ -36,6 +44,8 @@ ttsAudio.addEventListener("error", () => {
 });
 
 type Settings = { speed: number; voice: string; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string; translationProviderConfigured: boolean };
+type OllamaRunningModel = { name: string; size: number; size_vram: number };
+type OllamaDiscovery = { installed: boolean; executable: string | null; service_available: boolean; model_store_found: boolean; model_directory: string; endpoint: string; models: string[]; api_models: string[]; manifest_models: string[]; running_models: OllamaRunningModel[] };
 type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
 type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
 
@@ -132,8 +142,33 @@ const loadSettings = (): Settings => {
   catch { return defaults; }
 };
 let settings = loadSettings();
+if (!localStorage.getItem(translationDefaultKey)) {
+  settings.translationProvider = "azure";
+  settings.translationModel = "";
+  settings.translationProviderConfigured = true;
+  localStorage.setItem(settingsKey, JSON.stringify(settings));
+  localStorage.setItem(translationDefaultKey, "set");
+}
 let analysis: SentenceCard[] = [];
 let analysisRequest = 0;
+let azureKeyConfigured = false;
+
+function updateAzureSetupStatus(configured: boolean): void {
+  azureKeyConfigured = configured;
+  $("azure-key-editor").hidden = configured;
+  $("replace-azure-key").hidden = !configured;
+  const provider = settings.translationProvider;
+  const providerName = provider === "ollama" ? "Local Ollama" : provider === "offline" ? "Offline examples" : "Azure Translator F0";
+  $("translation-setup-status").textContent = configured
+    ? `Azure F0 is already configured and its key is saved securely. ${provider === "azure" ? "Azure is selected; there is nothing to set up here." : `${providerName} is currently selected; choose Azure only if you want to switch back.`}`
+    : `No saved Azure key was found. Azure is the default hosted translator; enter a key only if you want to use it. ${provider === "azure" ? "Until then, new sentence translations will not be available." : `${providerName} is currently selected.`}`;
+}
+
+function updateProviderControls(): void {
+  const provider = $<HTMLSelectElement>("translation-provider").value;
+  $("azure-provider-controls").hidden = provider !== "azure";
+  $("ollama-model-controls").hidden = provider !== "ollama";
+}
 
 function renderSentence(card: SentenceCard | undefined): void {
   const current = card?.text ?? "";
@@ -181,9 +216,7 @@ async function translateCard(card: SentenceCard, request: number, index: number)
   try {
     let result: { english: string; provider: string; latency_ms: number; cached: boolean };
     if (settings.translationProvider === "ollama") {
-      const start = performance.now();
-      const english = await invoke<string>("translate_local", { text: card.text, model: settings.translationModel });
-      result = { english, provider: `Ollama (${settings.translationModel})`, latency_ms: Math.round(performance.now() - start), cached: false };
+      result = await invoke("translate_ollama_auto", { text: card.text, model: settings.translationModel });
     } else {
       result = await invoke("translate_auto", { text: card.text, model: settings.translationModel });
     }
@@ -347,8 +380,9 @@ function renderViews(): void {
     else el.hidden = !visibility[el.id.replace("-view", "")];
   });
   $("tabs").hidden = settingsOpen;
-  $("settings-toggle").setAttribute("aria-label", settingsOpen ? "Return to learning view" : "Settings");
-  $("settings-toggle").title = settingsOpen ? "Return to learning view" : "Settings";
+  $("app").classList.toggle("setup-mode", settingsOpen);
+  $("settings-toggle").setAttribute("aria-label", settingsOpen ? "Return to PhasaForge" : "Setup and settings");
+  $("settings-toggle").title = settingsOpen ? "Return to PhasaForge" : "Setup and settings";
 }
 
 function showTab(tab: string): void {
@@ -366,12 +400,14 @@ speed.value = String(settings.speed);
 $<HTMLInputElement>("settings-speed").value = String(settings.speed);
 $<HTMLOutputElement>("speed-output").value = `${Number(settings.speed).toFixed(2).replace(/0$/, "")}×`;
 $<HTMLSelectElement>("translation-provider").value = settings.translationProvider;
-$<HTMLInputElement>("model-download-name").value = settings.translationModel || "qwen3.5:4b";
+$<HTMLButtonElement>("save-settings").textContent = settings.translationProvider === "ollama" ? "Save and Load Model" : "Save Settings";
+$<HTMLInputElement>("model-download-name").value = "";
 $<HTMLSelectElement>("hotkey-modifier").value = settings.hotkeyModifier;
 $<HTMLSelectElement>("hotkey-key").value = settings.hotkeyKey;
 renderShortcut();
 renderPassage();
 updateVoiceOptions();
+updateProviderControls();
 window.speechSynthesis?.addEventListener("voiceschanged", updateVoiceOptions);
 
 source.addEventListener("input", renderPassage);
@@ -395,14 +431,34 @@ $("next").addEventListener("click", () => { sentenceIndex = Math.min(analysis.le
 document.querySelectorAll<HTMLButtonElement>(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab ?? "words")));
 $("settings-toggle").addEventListener("click", () => {
   settingsOpen = !settingsOpen; renderViews();
-  if (settingsOpen) void refreshOllamaModels();
+  if (settingsOpen) { void refreshOllamaModels(); void refreshThaiAsrStatus(); $("settings-view").scrollTop = 0; }
+});
+$("finish-setup").addEventListener("click", () => {
+  localStorage.setItem(setupSeenKey, "complete");
+  settingsOpen = false;
+  renderViews();
 });
 $("translation-provider").addEventListener("change", () => {
   settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
   settings.translationProviderConfigured = true;
   localStorage.setItem(settingsKey, JSON.stringify(settings));
+  $<HTMLButtonElement>("save-settings").textContent = settings.translationProvider === "ollama" ? "Save and Load Model" : "Save Settings";
+  updateProviderControls();
   $("provider-status").textContent = settings.translationProvider === "offline" ? "Offline examples and word lookup are local; no network is used." : settings.translationProvider === "ollama" ? "Translation is sent only to Ollama at 127.0.0.1 on this PC." : "Azure Translator F0 is the automatic provider. The app stops hosted requests at 1.9M characters per month; Ollama can serve as fallback.";
+  if (azureKeyConfigured) updateAzureSetupStatus(true);
+  if (settings.translationProvider === "ollama") void refreshOllamaModels();
   if (source.value.trim()) renderPassage();
+});
+$<HTMLSelectElement>("translation-model").addEventListener("change", event => {
+  const model = (event.currentTarget as HTMLSelectElement).value;
+  $<HTMLButtonElement>("save-settings").textContent = settings.translationProvider === "ollama" ? "Save and Load Model" : "Save Settings";
+  if (!model) {
+    $("provider-status").textContent = "Choose a detected local Ollama model, then save to load it.";
+  } else if (ollamaDiscovery?.api_models.includes(model)) {
+    $("provider-status").textContent = `${model} selected. Click Save Settings to start it and keep it loaded in Ollama.`;
+  } else {
+    $("provider-status").textContent = "That model was not found in the configured Ollama model store.";
+  }
 });
 $("refresh-models").addEventListener("click", () => { void refreshOllamaModels(); });
 $("test-offline").addEventListener("click", async () => {
@@ -440,14 +496,77 @@ async function refreshOllamaModels(): Promise<void> {
   const select = $<HTMLSelectElement>("translation-model");
   select.replaceChildren();
   try {
-    const models = await invoke<string[]>("ollama_models");
+    const discovery = await invoke<OllamaDiscovery>("discover_ollama");
+    ollamaDiscovery = discovery;
+    // Only offer models the running Ollama API confirms it can load. Disk
+    // manifests alone can belong to a store the current server has not opened.
+    const models = discovery.api_models;
+    select.add(new Option(models.length ? "Choose an installed model…" : "No installed models found", ""));
     for (const model of models) select.add(new Option(model, model));
-    if (!models.length) select.add(new Option("No local models found", ""));
-    const preferred = ["qwen3.8-27b-ud-iq3-xxs:ctx32k", "qwen3.5:27b", "qwen3.5:9b-q4_K_M", "qwen3.5:4b"];
-    const chosen = models.includes(settings.translationModel) ? settings.translationModel : preferred.find(model => models.includes(model)) ?? models[0];
-    if (chosen) { select.value = chosen; settings.translationModel = chosen; }
-    $("provider-status").textContent = models.length ? `Local Ollama ready · ${models.length} model${models.length === 1 ? "" : "s"} found.` : "Ollama is running, but no local models are installed.";
-  } catch (error) { select.add(new Option("Ollama unavailable", "")); $("provider-status").textContent = String(error); }
+    if (models.includes(settings.translationModel)) select.value = settings.translationModel;
+    const apiModelNames = new Set(discovery.api_models.map(model => model.toLowerCase()));
+    const missingStoreModels = discovery.manifest_models.filter(model => !apiModelNames.has(model.toLowerCase()));
+    if (discovery.service_available && missingStoreModels.length > 0 && !ollamaStoreRepairAttempted) {
+      ollamaStoreRepairAttempted = true;
+      $("ollama-discovery-status").textContent = `Ollama reports ${discovery.api_models.length} of ${discovery.manifest_models.length} models from ${discovery.model_directory}. Checking that no model is resident, then aligning Ollama with this store…`;
+      $("provider-status").textContent = "Repairing Ollama model-store access…";
+      try {
+        const repair = await invoke<string>("repair_ollama_model_store");
+        $("provider-status").textContent = repair;
+        await refreshOllamaModels();
+        return;
+      } catch (error) {
+        $("ollama-discovery-status").textContent = `Model files exist in ${discovery.model_directory}, but Ollama could not be aligned automatically: ${String(error)}`;
+        $("provider-status").textContent = String(error);
+        return;
+      }
+    }
+    const activeModel = discovery.running_models.find(model => model.name.toLowerCase() === settings.translationModel.toLowerCase());
+    const memoryText = (bytes: number): string => `${(bytes / (1024 ** 3)).toFixed(1)} GiB`;
+    $("ollama-residency-status").textContent = activeModel
+      ? `Loaded in Ollama: ${activeModel.name} · ${activeModel.size ? memoryText(activeModel.size) + " resident" : "resident"}${activeModel.size_vram ? ` · ${memoryText(activeModel.size_vram)} VRAM` : ""}.`
+      : discovery.running_models.length
+        ? `Ollama currently has ${discovery.running_models.map(model => model.name).join(", ")} loaded. The selected model is not resident.`
+        : discovery.service_available ? "No model is currently loaded in Ollama memory." : "Ollama is not responding, so loaded model status is unavailable.";
+    if (discovery.service_available) {
+      $("ollama-discovery-status").textContent = discovery.api_models.length
+        ? `Connected to Ollama at ${discovery.endpoint}. It reports ${discovery.api_models.length} installed model${discovery.api_models.length === 1 ? "" : "s"}${discovery.manifest_models.length > discovery.api_models.length ? `; ${discovery.manifest_models.length} model files are also detected locally` : ""}. Select a model and save to load it.`
+        : discovery.manifest_models.length
+          ? `Ollama's API is not yet reporting the ${discovery.manifest_models.length} model files in ${discovery.model_directory}. PhasaForge checks and aligns the store during setup.`
+          : `Connected to Ollama at ${discovery.endpoint}, but no installed models or local model entries were found.`;
+    } else if (discovery.installed && discovery.manifest_models.length) {
+      $("ollama-discovery-status").textContent = `Ollama is installed${discovery.executable ? ` at ${discovery.executable}` : ""}, but its service is not responding. Model files are present in ${discovery.model_directory}; start Ollama, then check again here.`;
+    } else if (discovery.installed) {
+      $("ollama-discovery-status").textContent = `Ollama is installed${discovery.executable ? ` at ${discovery.executable}` : ""}, but the configured service at ${discovery.endpoint} is not responding${discovery.manifest_models.length ? `; ${discovery.manifest_models.length} local model entries are detected` : ""}.`;
+    } else if (discovery.manifest_models.length) {
+      $("ollama-discovery-status").textContent = `Found model files in ${discovery.model_directory}, but the Ollama runtime was not located. Install Ollama for Windows from ollama.com/download/windows; keep its default application location, then reopen PhasaForge.`;
+    } else if (discovery.model_store_found) {
+      $("ollama-discovery-status").textContent = `A possible Ollama model folder exists at ${discovery.model_directory}, but the Ollama runtime or model manifests were not found. Azure is ready. To add local translation:\n1. Download and run Ollama for Windows: https://ollama.com/download/windows\n2. Keep the default application location: %LOCALAPPDATA%\\Programs\\Ollama.\n3. Start Ollama and reopen PhasaForge. Model files normally live in %USERPROFILE%\\.ollama\\models.`;
+    } else {
+      $("ollama-discovery-status").textContent = "Ollama was not found. Azure is ready and does not need a local model. To add local translation:\n1. Download and run Ollama for Windows: https://ollama.com/download/windows\n2. Keep the default application location: %LOCALAPPDATA%\\Programs\\Ollama. Models use %USERPROFILE%\\.ollama\\models by default.\n3. Start Ollama and reopen PhasaForge; startup discovery will list its installed models.";
+    }
+    if (settings.translationProvider === "ollama") {
+      $("provider-status").textContent = discovery.service_available
+          ? models.length ? `Choose a model above; Save Settings asks the running Ollama service to start it and keeps it loaded.` : "No installed Ollama models. Type a model name and click Download model."
+        : discovery.installed ? "Ollama is installed but not running. Open Ollama, then choose Check local Ollama." : "Ollama is not installed. Follow the install location shown above, then reopen Setup.";
+      if (discovery.service_available && settings.translationModel && discovery.api_models.includes(settings.translationModel) && !activeModel) {
+        $("provider-status").textContent = `Restoring your saved local model ${settings.translationModel} into memory…`;
+        $("ollama-residency-status").textContent = `Loading ${settings.translationModel}…`;
+        try {
+          const loaded = await invoke<OllamaRunningModel>("load_ollama_model", { model: settings.translationModel });
+          $("ollama-residency-status").textContent = `Loaded and resident in Ollama: ${loaded.name}${loaded.size ? ` · ${(loaded.size / (1024 ** 3)).toFixed(1)} GiB resident` : ""}${loaded.size_vram ? ` · ${(loaded.size_vram / (1024 ** 3)).toFixed(1)} GiB VRAM` : ""}.`;
+          $("provider-status").textContent = `${loaded.name} is running and ready for local translation.`;
+        } catch (error) {
+          $("ollama-residency-status").textContent = `Saved model did not load: ${String(error)}`;
+          $("provider-status").textContent = `PhasaForge could not restore ${settings.translationModel}: ${String(error)}`;
+        }
+      }
+    }
+  } catch (error) {
+    select.add(new Option("Ollama unavailable", ""));
+    $("ollama-discovery-status").textContent = `Could not complete the local model check: ${String(error)}`;
+    if (settings.translationProvider === "ollama") $("provider-status").textContent = "Local Ollama discovery failed. Azure remains available if selected.";
+  }
 }
 $("test-local-translation").addEventListener("click", async () => {
   const model = $<HTMLSelectElement>("translation-model").value;
@@ -488,7 +607,13 @@ $("save-azure-key").addEventListener("click", async () => {
     await invoke("save_translator_key", { key: input.value });
     input.value = "";
     $("provider-status").textContent = "F0 key saved in Windows Credential Manager. It is not stored in app settings or the database.";
+    updateAzureSetupStatus(true);
   } catch (error) { $("provider-status").textContent = `Could not securely save the key: ${String(error)}`; }
+});
+$("replace-azure-key").addEventListener("click", () => {
+  $("azure-key-editor").hidden = false;
+  $("replace-azure-key").hidden = true;
+  $<HTMLInputElement>("azure-key").focus();
 });
 $("test-azure-translation").addEventListener("click", async () => {
   const button = $<HTMLButtonElement>("test-azure-translation");
@@ -519,10 +644,22 @@ $("refresh-dictionary").addEventListener("click", async () => {
   catch (error) { $("dictionary-update-status").textContent = `Dictionary update failed: ${String(error)}`; }
 });
 $("save-settings").addEventListener("click", async () => {
+  const nextProvider = $<HTMLSelectElement>("translation-provider").value;
+  const selectedModel = $<HTMLSelectElement>("translation-model").value;
+  if (nextProvider === "ollama" && !ollamaDiscovery?.service_available) {
+    $("provider-status").textContent = `PhasaForge cannot reach the existing Ollama service at ${ollamaDiscovery?.endpoint ?? "the configured OLLAMA_HOST"}. Settings were not saved.`;
+    return;
+  }
+  if (nextProvider === "ollama" && (!selectedModel || !ollamaDiscovery?.api_models.includes(selectedModel))) {
+    $("provider-status").textContent = ollamaDiscovery?.manifest_models.length
+      ? "Select one of the detected local models before saving Local Ollama."
+      : "Select a detected local Ollama model before saving Local Ollama.";
+    return;
+  }
   settings.voice = $<HTMLSelectElement>("voice-select").value;
-  settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
+  settings.translationProvider = nextProvider;
   settings.translationProviderConfigured = true;
-  settings.translationModel = $<HTMLSelectElement>("translation-model").value;
+  settings.translationModel = selectedModel || settings.translationModel;
   settings.hotkeyModifier = $<HTMLSelectElement>("hotkey-modifier").value;
   settings.hotkeyKey = $<HTMLSelectElement>("hotkey-key").value;
   settings.speed = Number(speed.value);
@@ -534,16 +671,138 @@ $("save-settings").addEventListener("click", async () => {
   } catch (error) {
     $("hotkey-status").textContent = `Preference saved; shortcut listener is unavailable: ${String(error)}`;
   }
-  $("settings-saved").textContent = "Saved on this device.";
-  setTimeout(() => { $("settings-saved").textContent = ""; }, 2000);
+  if (settings.translationProvider === "ollama") {
+    const button = $<HTMLButtonElement>("save-settings");
+    button.disabled = true;
+    $("settings-saved").textContent = "Settings saved; starting the model…";
+    $("provider-status").textContent = `Starting ${settings.translationModel} in Ollama. First load can take a minute while its weights enter memory.`;
+    $("ollama-residency-status").textContent = `Loading ${settings.translationModel}…`;
+    try {
+      const loaded = await invoke<OllamaRunningModel>("load_ollama_model", { model: settings.translationModel });
+      const memory = loaded.size ? ` · ${ (loaded.size / (1024 ** 3)).toFixed(1) } GiB resident` : "";
+      const vram = loaded.size_vram ? ` · ${(loaded.size_vram / (1024 ** 3)).toFixed(1)} GiB VRAM` : "";
+      $("ollama-residency-status").textContent = `Loaded and resident in Ollama: ${loaded.name}${memory}${vram}.`;
+      $("provider-status").textContent = `${loaded.name} is running and will stay loaded until Ollama unloads it. Local Thai translation is ready.`;
+      $("settings-saved").textContent = "Saved; model loaded in memory.";
+    } catch (error) {
+      $("ollama-residency-status").textContent = `Model did not load: ${String(error)}`;
+      $("provider-status").textContent = `Settings were saved, but Ollama did not confirm a running model: ${String(error)}`;
+      $("settings-saved").textContent = "Settings saved; model load failed.";
+    } finally { button.disabled = false; }
+  } else {
+    $("settings-saved").textContent = "Saved on this device.";
+    setTimeout(() => { $("settings-saved").textContent = ""; }, 2000);
+  }
+});
+
+async function refreshThaiAsrStatus(): Promise<void> {
+  try {
+    thaiAsrReady = await invoke<boolean>("thai_asr_status");
+    $("asr-status").textContent = thaiAsrReady
+      ? "Local Thai recognition is ready. It uses the CPU only while transcribing, then exits; a temporary audio file stays on this PC and is deleted after use."
+      : "Not prepared yet. First-time setup installs the local CPU engine and audio support, then downloads the Thai model (about 150 MB extracted). It can take several minutes; Python 3.10+ and internet are required.";
+    $("prepare-thai-asr").textContent = thaiAsrReady ? "Refresh Practice speech recognition" : "Prepare Practice speech recognition now";
+  } catch (error) {
+    thaiAsrReady = false;
+    $("asr-status").textContent = `Could not check local Thai recognition: ${String(error)}`;
+  }
+}
+
+async function ensureThaiAsrReady(): Promise<void> {
+  if (thaiAsrReady) return;
+  if (!thaiAsrPreparation) {
+    thaiAsrPreparation = (async () => {
+      await invoke("prepare_thai_asr");
+      thaiAsrReady = await invoke<boolean>("thai_asr_status");
+      if (!thaiAsrReady) throw new Error("Setup finished without a ready recognizer. Open Setup to retry.");
+      await refreshThaiAsrStatus();
+    })().finally(() => { thaiAsrPreparation = undefined; });
+  }
+  await thaiAsrPreparation;
+}
+
+async function transcribePracticeRecording(blob: Blob): Promise<void> {
+  if (transcriptionInProgress) return;
+  transcriptionInProgress = true;
+  setRecordingControls(false, !audio.paused);
+  try {
+    if (!thaiAsrReady) {
+      $("practice-status").textContent = "Your recording is saved. Preparing the Thai speech recognizer now (one-time download); it will transcribe this same take when ready…";
+      $("heard-text").textContent = "Preparing Thai speech recognition…";
+      await ensureThaiAsrReady();
+    }
+    $("practice-status").textContent = "Recording is available for replay. Transcribing locally on the CPU…";
+    $("heard-text").textContent = "Transcribing…";
+    $("heard-translation").textContent = "Waiting for Thai recognition…";
+    $("heard-translation-status").textContent = "";
+    const text = await transcribeRecording(blob);
+    const recognizedThai = text.trim();
+    $("heard-text").textContent = recognizedThai || "No Thai speech was recognised in this recording.";
+    if (recognizedThai) {
+      $("practice-status").textContent = "Thai speech recognized. Translating the recognized words into English…";
+      await translatePracticeTranscript(recognizedThai);
+    } else {
+      $("heard-translation").textContent = "There is no recognized Thai text to translate.";
+      $("practice-status").textContent = "No Thai speech was recognized in this recording.";
+    }
+  } catch (error) {
+    $("heard-text").textContent = "Your recording is still available for replay; recognition setup did not finish.";
+    $("practice-status").textContent = `Thai speech recognition could not prepare or transcribe this take: ${String(error)} Open Setup to retry; the saved take will be transcribed after setup.`;
+    $("asr-status").textContent = `Speech recognition setup failed: ${String(error)}`;
+  } finally {
+    transcriptionInProgress = false;
+    setRecordingControls(false, !audio.paused);
+  }
+}
+
+async function translatePracticeTranscript(thai: string): Promise<void> {
+  try {
+    let result: { english: string; provider: string; latency_ms: number; cached: boolean };
+    if (settings.translationProvider === "offline") {
+      const cards = await invoke<SentenceCard[]>("analyze_text", { text: thai });
+      const example = cards.find(card => card.text === thai && card.meaning);
+      if (!example?.meaning) {
+        $("heard-translation").textContent = "No saved English example is available offline for this phrase.";
+        $("heard-translation-status").textContent = "Select Azure F0 in Settings to translate new phrases.";
+        return;
+      }
+      result = { english: example.meaning, provider: example.meaning_source ?? "Offline ThaiReader example", latency_ms: 0, cached: true };
+    } else if (settings.translationProvider === "ollama") {
+      result = await invoke("translate_ollama_auto", { text: thai, model: settings.translationModel });
+    } else {
+      result = await invoke("translate_auto", { text: thai, model: settings.translationModel });
+    }
+    $("heard-translation").textContent = result.english;
+    $("heard-translation-status").textContent = `${result.cached ? "Saved translation" : "Translated"} via ${result.provider}${result.latency_ms ? ` · ${result.latency_ms} ms` : ""}.`;
+    $("practice-status").textContent = "Recognition and English translation complete. Compare both with the sentence above; this is not pronunciation or tone scoring.";
+  } catch (error) {
+    $("heard-translation").textContent = "English translation is unavailable.";
+    $("heard-translation-status").textContent = `Translation failed: ${String(error)}`;
+    $("practice-status").textContent = "Thai speech was recognized, but its English translation failed. The Thai transcript remains available above.";
+  }
+}
+
+$("prepare-thai-asr").addEventListener("click", async event => {
+  const button = event.currentTarget as HTMLButtonElement;
+  button.disabled = true;
+  $("asr-status").textContent = "Preparing the Practice speech recognizer: installing its local CPU engine and audio support, then downloading the Thai model (about 150 MB extracted). First setup can take several minutes; microphone audio stays local.";
+  try {
+    await ensureThaiAsrReady();
+    await refreshThaiAsrStatus();
+    if (lastRecordingBlob) void transcribePracticeRecording(lastRecordingBlob);
+  } catch (error) {
+    $("asr-status").textContent = `Practice speech recognition setup failed: ${String(error)}`;
+  } finally {
+    button.disabled = false;
+  }
 });
 
 const audio = $("recorded-audio") as HTMLAudioElement;
 const setRecordingControls = (recording: boolean, playing: boolean): void => {
-  $("record").toggleAttribute("disabled", recording || playing);
+  $("record").toggleAttribute("disabled", recording || playing || transcriptionInProgress);
   $("stop-record").toggleAttribute("disabled", !recording);
   $("play-recording").toggleAttribute("disabled", recording || playing || speechPlaying || !recordingUrl);
-  $("record-again").toggleAttribute("disabled", recording || playing || speechPlaying);
+  $("record-again").toggleAttribute("disabled", recording || playing || speechPlaying || transcriptionInProgress);
   $("play-selection").toggleAttribute("disabled", recording);
   $("play-current").toggleAttribute("disabled", recording);
 };
@@ -559,6 +818,9 @@ audio.addEventListener("error", () => {
 
 async function startRecording(): Promise<void> {
   if (mediaRecorder?.state === "recording" || !audio.paused) return;
+  $("heard-text").textContent = "Waiting for recording…";
+  $("heard-translation").textContent = "Waiting for Thai recognition…";
+  $("heard-translation-status").textContent = "";
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recordedChunks = [];
@@ -569,14 +831,19 @@ async function startRecording(): Promise<void> {
     mediaRecorder = new MediaRecorder(stream);
     mediaRecorder.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => {
-      $("practice-status").textContent = "Audio captured locally for this session. No Thai recognition engine is configured; no transcript or pronunciation score was generated.";
-      $("heard-text").textContent = "Recognition unavailable — no Thai ASR backend is installed/configured.";
       stream?.getTracks().forEach(t => t.stop());
       stream = undefined;
       const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || "audio/webm" });
+      lastRecordingBlob = blob;
       recordingUrl = blob.size ? URL.createObjectURL(blob) : undefined;
       if (recordingUrl) audio.src = recordingUrl;
       setRecordingControls(false, false);
+      if (recordingUrl) {
+        void transcribePracticeRecording(blob);
+      } else {
+        $("practice-status").textContent = "No usable audio was captured. Please record again.";
+        $("heard-text").textContent = "—";
+      }
     };
     mediaRecorder.start();
     $("practice-status").textContent = "Recording… Microphone is active. Press Stop when finished.";
@@ -586,6 +853,25 @@ async function startRecording(): Promise<void> {
     stream = undefined;
     setRecordingControls(false, false);
     $("practice-status").textContent = "Microphone access was not available. Check Windows microphone permissions.";
+  }
+}
+
+async function transcribeRecording(blob: Blob): Promise<string> {
+  const decoder = new AudioContext();
+  try {
+    const decoded = await decoder.decodeAudioData(await blob.arrayBuffer());
+    if (decoded.duration > 60) throw new Error("Recordings for this baseline are limited to 60 seconds.");
+    const frames = Math.max(1, Math.ceil(decoded.duration * 16_000));
+    const offline = new OfflineAudioContext(1, frames, 16_000);
+    const sourceNode = offline.createBufferSource();
+    sourceNode.buffer = decoded;
+    sourceNode.connect(offline.destination);
+    sourceNode.start();
+    const resampled = await offline.startRendering();
+    const samples = Array.from(resampled.getChannelData(0));
+    return await invoke<string>("transcribe_thai_audio", { samples, sampleRate: 16_000 });
+  } finally {
+    await decoder.close().catch(() => undefined);
   }
 }
 $("record").addEventListener("click", () => { void startRecording(); });
@@ -603,10 +889,13 @@ $("play-recording").addEventListener("click", () => {
   });
 });
 setRecordingControls(false, false);
+void refreshThaiAsrStatus();
 renderViews();
 
 if ("__TAURI_INTERNALS__" in window) {
   const appWindow = getCurrentWindow();
+  // Discover Ollama at startup and restore the saved model when Local Ollama is selected.
+  void refreshOllamaModels();
   void invoke<typeof nativeThaiVoices>("list_thai_voices").then(voices => {
     nativeThaiVoices = voices;
     nativeVoiceDiscoveryComplete = true;
@@ -618,9 +907,10 @@ if ("__TAURI_INTERNALS__" in window) {
   });
   void invoke<string>("database_location").then(path => { $<HTMLInputElement>("database-path").value = path; }).catch(error => { $<HTMLInputElement>("database-path").value = String(error); });
   void invoke<boolean>("translator_key_status").then(configured => {
+    updateAzureSetupStatus(configured);
     if (configured) $("provider-status").textContent = "Azure Translator F0 key is stored in Windows Credential Manager. Automatic translation is ready.";
-    else if (settings.translationProvider === "azure") $("provider-status").textContent = "Paste the Azure Translator F0 key in Settings to enable automatic hosted translation. Offline word analysis remains ready.";
-  }).catch(error => { $("provider-status").textContent = `Could not check secure Translator key status: ${String(error)}`; });
+    else if (settings.translationProvider === "azure") $("provider-status").textContent = "No Azure F0 key is saved. Enter one in Setup only if you want to use Azure; offline word analysis remains ready.";
+  }).catch(error => { $("translation-setup-status").textContent = `Could not check Azure key status: ${String(error)}`; $("provider-status").textContent = `Could not check secure Translator key status: ${String(error)}`; });
   void listen<{ text: string | null; rect: { x: number; y: number; width: number; height: number } | null; clipboard_restored: boolean | null; source: string; clipboard_status: string }>("selection-captured", async event => {
     const capture = event.payload;
     // A failed/empty capture replaces the previous source; never imply stale text was newly selected.

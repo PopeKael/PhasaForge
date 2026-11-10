@@ -1,7 +1,9 @@
 use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
-use std::{path::PathBuf, sync::Mutex, time::Duration};
+use std::{fs, path::{Path, PathBuf}, process::Command, sync::Mutex, time::Duration};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, State};
 
 const SEED_DB: &[u8] = include_bytes!("../../assets/learner.sqlite");
@@ -398,9 +400,20 @@ pub fn database_location(state: State<'_, LanguageState>) -> String {
 
 fn local_client() -> Result<Client, String> {
     Client::builder()
+        .no_proxy()
         .timeout(Duration::from_secs(900))
         .build()
         .map_err(|e| e.to_string())
+}
+
+fn ollama_base_url() -> String {
+    let configured = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "127.0.0.1:11434".into());
+    let configured = configured.trim().trim_end_matches('/');
+    if configured.contains("://") { configured.to_string() } else { format!("http://{configured}") }
+}
+
+fn ollama_url(path: &str) -> String {
+    format!("{}{path}", ollama_base_url())
 }
 
 #[cfg(target_os = "windows")]
@@ -521,6 +534,30 @@ pub async fn translate_auto(text: String, model: String, state: State<'_, Langua
 }
 
 #[tauri::command]
+pub async fn translate_ollama_auto(text: String, model: String, state: State<'_, LanguageState>) -> Result<TranslationResult, String> {
+    let local_start = std::time::Instant::now();
+    let local_result = if model.trim().is_empty() {
+        Err("No Ollama model is selected.".to_string())
+    } else {
+        translate_local(text.clone(), model.clone()).await
+    };
+    match local_result {
+        Ok(english) => Ok(TranslationResult {
+            english,
+            provider: format!("Ollama ({model})"),
+            latency_ms: local_start.elapsed().as_millis(),
+            cached: false,
+        }),
+        Err(local_error) => {
+            let mut result = translate_azure(text, state).await
+                .map_err(|azure_error| format!("{local_error} Azure F0 fallback also failed: {azure_error}"))?;
+            result.provider = format!("{} · Ollama fallback failed: {local_error}", result.provider);
+            Ok(result)
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn test_azure_translation(state: State<'_, LanguageState>) -> Result<Vec<TranslationCheck>, String> {
     let cases = [("ผมรู้สึกไม่สบาย", "I feel unwell."), ("นี่ของคุณใช่ไหม", "Is this yours?"), ("ไปเลย ไม่ต้องรอ", "Go ahead, no need to wait."), ("เด็กวิ่งข้ามถนน", "The child ran across the street."), ("ซื้อสองแถมหนึ่ง", "Buy two, get one free.")];
     let mut output = Vec::new();
@@ -533,7 +570,8 @@ pub async fn test_azure_translation(state: State<'_, LanguageState>) -> Result<V
 
 #[tauri::command]
 pub async fn ollama_models() -> Result<Vec<String>, String> {
-    let response = local_client()?.get("http://127.0.0.1:11434/api/tags").send().await.map_err(|_| "Ollama is not responding on this PC (127.0.0.1:11434). Install/start it to use local translation.".to_string())?;
+    let endpoint = ollama_base_url();
+    let response = local_client()?.get(ollama_url("/api/tags")).send().await.map_err(|_| format!("Ollama is not responding at {endpoint}."))?;
     if !response.status().is_success() {
         return Err(format!("Ollama returned HTTP {}", response.status()));
     }
@@ -544,6 +582,267 @@ pub async fn ollama_models() -> Result<Vec<String>, String> {
         .flatten()
         .filter_map(|m| m["name"].as_str().map(str::to_string))
         .collect())
+}
+
+#[derive(Serialize)]
+pub struct OllamaDiscovery {
+    pub installed: bool,
+    pub executable: Option<String>,
+    pub service_available: bool,
+    pub model_store_found: bool,
+    pub model_directory: String,
+    pub endpoint: String,
+    pub models: Vec<String>,
+    pub api_models: Vec<String>,
+    pub manifest_models: Vec<String>,
+    pub running_models: Vec<OllamaRunningModel>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct OllamaRunningModel {
+    pub name: String,
+    pub size: u64,
+    pub size_vram: u64,
+}
+
+async fn query_ollama_running_models() -> Vec<OllamaRunningModel> {
+    let Ok(client) = Client::builder().no_proxy().connect_timeout(Duration::from_millis(500)).timeout(Duration::from_secs(3)).build() else { return Vec::new(); };
+    let Ok(response) = client.get(ollama_url("/api/ps")).send().await else { return Vec::new(); };
+    let Ok(value) = response.json::<serde_json::Value>().await else { return Vec::new(); };
+    value["models"].as_array().into_iter().flatten().filter_map(|model| {
+        let name = model["name"].as_str().or_else(|| model["model"].as_str())?.to_string();
+        Some(OllamaRunningModel {
+            name,
+            size: model["size"].as_u64().unwrap_or(0),
+            size_vram: model["size_vram"].as_u64().unwrap_or(0),
+        })
+    }).collect()
+}
+
+fn find_ollama_executable() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let where_output = Command::new("where.exe").arg("ollama.exe").output().ok();
+    #[cfg(not(target_os = "windows"))]
+    let where_output = Command::new("which").arg("ollama").output().ok();
+    if let Some(output) = where_output.filter(|output| output.status.success()) {
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let candidate = PathBuf::from(line.trim());
+            if candidate.is_file() { return Some(candidate); }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates = Vec::new();
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(PathBuf::from(local_app_data).join("Programs/Ollama/ollama.exe"));
+        }
+        if let Some(program_files) = std::env::var_os("ProgramFiles") {
+            candidates.push(PathBuf::from(program_files).join("Ollama/ollama.exe"));
+        }
+        if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+            candidates.push(PathBuf::from(program_files_x86).join("Ollama/ollama.exe"));
+        }
+        return candidates.into_iter().find(|candidate| candidate.is_file());
+    }
+    #[cfg(not(target_os = "windows"))]
+    None
+}
+
+fn ollama_model_directory() -> PathBuf {
+    if let Some(configured) = std::env::var_os("OLLAMA_MODELS").filter(|value| !value.is_empty()) {
+        return PathBuf::from(configured);
+    }
+    #[cfg(target_os = "windows")]
+    let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    #[cfg(not(target_os = "windows"))]
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    home.unwrap_or_else(|| PathBuf::from(".")).join(".ollama/models")
+}
+
+fn collect_ollama_manifests(current: &Path, root: &Path, models: &mut Vec<String>, visited: &mut usize, depth: usize) {
+    if *visited >= 20_000 || depth >= 16 { return; }
+    let Ok(entries) = fs::read_dir(current) else { return; };
+    for entry in entries.flatten() {
+        *visited += 1;
+        let Ok(kind) = entry.file_type() else { continue; };
+        if kind.is_symlink() { continue; }
+        if kind.is_dir() {
+            collect_ollama_manifests(&entry.path(), root, models, visited, depth + 1);
+        } else if kind.is_file() {
+            let Ok(relative) = entry.path().strip_prefix(root).map(Path::to_path_buf) else { continue; };
+            let mut parts: Vec<String> = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect();
+            if parts.len() < 3 { continue; }
+            parts.remove(0); // Registry name, normally registry.ollama.ai
+            if parts.first().is_some_and(|part| part == "library") { parts.remove(0); }
+            let Some(tag) = parts.pop() else { continue; };
+            if parts.is_empty() { continue; }
+            let name = format!("{}:{tag}", parts.join("/"));
+            if !models.contains(&name) { models.push(name); }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn discover_ollama() -> OllamaDiscovery {
+    let executable = find_ollama_executable();
+    let endpoint = ollama_base_url();
+    let model_directory = ollama_model_directory();
+    let (service_available, api_models) = match Client::builder().no_proxy().connect_timeout(Duration::from_millis(500)).timeout(Duration::from_secs(2)).build() {
+        Ok(client) => match client.get(ollama_url("/api/tags")).send().await {
+            Ok(response) if response.status().is_success() => (true, response.json::<serde_json::Value>().await.ok()),
+            _ => (false, None),
+        },
+        Err(_) => (false, None),
+    };
+    let api_models: Vec<String> = api_models.map(|value| {
+        value["models"].as_array().into_iter().flatten().filter_map(|model| model["name"].as_str().map(str::to_string)).collect()
+    }).unwrap_or_default();
+    let manifests = model_directory.join("manifests");
+    let manifests_v2 = model_directory.join("manifests-v2");
+    let mut manifest_models = Vec::new();
+    let mut visited = 0;
+    collect_ollama_manifests(&manifests, &manifests, &mut manifest_models, &mut visited, 0);
+    collect_ollama_manifests(&manifests_v2, &manifests_v2, &mut manifest_models, &mut visited, 0);
+    let mut api_models = api_models;
+    api_models.sort();
+    let mut models = api_models.clone();
+    for model in &manifest_models {
+        if !models.contains(model) { models.push(model.clone()); }
+    }
+    models.sort();
+    manifest_models.sort();
+    let installed = executable.is_some() || service_available;
+    let model_store_found = model_directory.exists() || !manifest_models.is_empty();
+    let running_models = if service_available { query_ollama_running_models().await } else { Vec::new() };
+    OllamaDiscovery {
+        installed,
+        executable: executable.map(|path| path.display().to_string()),
+        service_available,
+        model_store_found,
+        model_directory: model_directory.display().to_string(),
+        endpoint,
+        models,
+        api_models,
+        manifest_models,
+        running_models,
+    }
+}
+
+/// Reconcile the Windows Ollama tray app with the model store configured for
+/// PhasaForge. Ollama reads OLLAMA_MODELS only when its server starts, so a
+/// running but empty server must be restarted before disk-discovered models
+/// become loadable through the API. Never interrupt an Ollama process with a
+/// resident model, and never touch a non-local endpoint.
+#[tauri::command]
+pub async fn repair_ollama_model_store() -> Result<String, String> {
+    #[cfg(not(target_os = "windows"))]
+    { return Err("Automatic Ollama model-store repair is supported on Windows only.".into()); }
+
+    #[cfg(target_os = "windows")]
+    {
+        let endpoint = ollama_base_url();
+        let parsed = reqwest::Url::parse(&endpoint).map_err(|error| error.to_string())?;
+        if !matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1")) {
+            return Err("Automatic repair is limited to the Ollama service on this PC.".into());
+        }
+        let client = Client::builder().no_proxy().connect_timeout(Duration::from_millis(700)).timeout(Duration::from_secs(3)).build().map_err(|e| e.to_string())?;
+        let tags_response = client.get(ollama_url("/api/tags")).send().await.map_err(|e| format!("Ollama did not respond at {endpoint}: {e}"))?;
+        if !tags_response.status().is_success() { return Err(format!("Ollama returned HTTP {} while checking its model store.", tags_response.status())); }
+        let tags = tags_response.json::<serde_json::Value>().await.map_err(|e| e.to_string())?;
+        let api_models: Vec<String> = tags["models"].as_array().into_iter().flatten()
+            .filter_map(|model| model["name"].as_str().map(str::to_owned)).collect();
+
+        let model_directory = ollama_model_directory();
+        let manifests = model_directory.join("manifests");
+        let manifests_v2 = model_directory.join("manifests-v2");
+        let mut disk_models = Vec::new();
+        let mut visited = 0;
+        collect_ollama_manifests(&manifests, &manifests, &mut disk_models, &mut visited, 0);
+        collect_ollama_manifests(&manifests_v2, &manifests_v2, &mut disk_models, &mut visited, 0);
+        if disk_models.is_empty() { return Err(format!("No Ollama model manifests were found in {}.", model_directory.display())); }
+        let missing_models: Vec<&String> = disk_models.iter().filter(|disk_model| {
+            !api_models.iter().any(|api_model| api_model.eq_ignore_ascii_case(disk_model))
+        }).collect();
+        if missing_models.is_empty() { return Ok(format!("Ollama already reports all {} model(s) in {}.", disk_models.len(), model_directory.display())); }
+
+        let running_response = client.get(ollama_url("/api/ps")).send().await.map_err(|e| e.to_string())?;
+        if !running_response.status().is_success() { return Err(format!("Ollama returned HTTP {} while checking loaded models.", running_response.status())); }
+        let running = running_response.json::<serde_json::Value>().await.map_err(|e| e.to_string())?;
+        if running["models"].as_array().is_some_and(|models| !models.is_empty()) {
+            return Err(format!("Ollama reports {} of {} stored models, and has a model loaded in memory. PhasaForge left it running and did not restart Ollama.", api_models.len(), disk_models.len()));
+        }
+
+        let executable = find_ollama_executable().ok_or_else(|| "Ollama's executable was not found, so its model store cannot be repaired automatically.".to_string())?;
+        let app_executable = executable.parent().unwrap_or_else(|| Path::new(".")).join("ollama app.exe");
+        if !app_executable.is_file() { return Err(format!("Ollama desktop app was not found beside {}.", executable.display())); }
+
+        // Persist the intended store for future logins and pass it explicitly
+        // to this restart so the service does not depend on a stale parent env.
+        let mut setx = Command::new("setx.exe");
+        setx.arg("OLLAMA_MODELS").arg(&model_directory);
+        setx.creation_flags(0x08000000);
+        let result = setx.output().map_err(|e| format!("Could not save OLLAMA_MODELS for this Windows user: {e}"))?;
+        if !result.status.success() { return Err(format!("Could not save OLLAMA_MODELS: {}", String::from_utf8_lossy(&result.stderr).trim())); }
+
+        // This path is reached only when the local API has no available tags,
+        // no resident models, and the configured disk store contains models.
+        let mut stop = Command::new("taskkill.exe");
+        stop.args(["/IM", "ollama app.exe", "/T", "/F"]);
+        stop.creation_flags(0x08000000);
+        let _ = stop.output(); // It is fine if the tray process was already gone.
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        let mut launch = Command::new(&app_executable);
+        launch.env("OLLAMA_MODELS", &model_directory).current_dir(app_executable.parent().unwrap_or_else(|| Path::new(".")));
+        launch.creation_flags(0x08000000);
+        launch.spawn().map_err(|e| format!("Could not restart Ollama with model store {}: {e}", model_directory.display()))?;
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        loop {
+            if let Ok(response) = client.get(ollama_url("/api/tags")).send().await {
+                if let Ok(value) = response.json::<serde_json::Value>().await {
+                    let count = value["models"].as_array().map_or(0, Vec::len);
+                    let names: Vec<&str> = value["models"].as_array().into_iter().flatten().filter_map(|model| model["name"].as_str()).collect();
+                    let all_present = disk_models.iter().all(|disk_model| names.iter().any(|api_model| api_model.eq_ignore_ascii_case(disk_model)));
+                    if all_present { return Ok(format!("Ollama restarted with {} and now reports all {} stored model(s).", model_directory.display(), disk_models.len())); }
+                    if count >= disk_models.len() { return Err(format!("Ollama reports {count} models after restart, but the configured store contains {} entries and one or more are still missing.", disk_models.len())); }
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err("Ollama was restarted with the configured model store, but its API did not report those models within 20 seconds.".into());
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn load_ollama_model(model: String) -> Result<OllamaRunningModel, String> {
+    let model = model.trim();
+    if model.is_empty() || model.len() > 120 || !model.chars().all(|c| c.is_ascii_alphanumeric() || ":._/-".contains(c)) {
+        return Err("Select a detected local Ollama model.".into());
+    }
+    let endpoint = ollama_base_url();
+    let client = local_client()?;
+    let response = client.post(ollama_url("/api/generate"))
+        .json(&serde_json::json!({"model":model,"prompt":"","stream":false,"keep_alive":-1}))
+        .send().await.map_err(|error| format!("Could not start Ollama model '{model}': {error}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("The Ollama service at {endpoint} did not recognize '{model}' (HTTP 404)."));
+    }
+    if !response.status().is_success() {
+        return Err(format!("Ollama at {endpoint} could not start '{model}' (HTTP {}).", response.status()));
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(running) = query_ollama_running_models().await.into_iter().find(|entry| entry.name.eq_ignore_ascii_case(model)) {
+            return Ok(running);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!("Ollama accepted the load request for '{model}', but /api/ps did not confirm that it is running. Refresh the local Ollama status before relying on it."));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
 }
 
 #[tauri::command]
@@ -558,7 +857,7 @@ pub async fn pull_ollama_model(model: String) -> Result<(), String> {
         return Err("Enter a valid Ollama model name such as qwen3:1.7b.".into());
     }
     let response = local_client()?
-        .post("http://127.0.0.1:11434/api/pull")
+        .post(ollama_url("/api/pull"))
         .json(&serde_json::json!({"name":model,"stream":false}))
         .send()
         .await
@@ -577,9 +876,16 @@ pub async fn translate_local(text: String, model: String) -> Result<String, Stri
     if text.trim().is_empty() || text.chars().count() > 5000 {
         return Err("Enter Thai text under 5,000 characters.".into());
     }
-    let response = local_client()?.post("http://127.0.0.1:11434/api/generate")
-        .json(&serde_json::json!({"model":model,"stream":false,"think":false,"keep_alive":"30s","options":{"temperature":0.1,"num_predict":256},"prompt":format!("/no_think\nTranslate this Thai text into natural English. Return only the English translation. Preserve names, politeness and intent. Do not explain or add facts.\nThai: {}\nEnglish:",text)}))
+    if model.trim().is_empty() {
+        return Err("No Ollama model is selected.".into());
+    }
+    let endpoint = ollama_base_url();
+    let response = local_client()?.post(ollama_url("/api/generate"))
+        .json(&serde_json::json!({"model":model,"stream":false,"think":false,"keep_alive":-1,"options":{"temperature":0.1,"num_predict":256},"prompt":format!("/no_think\nTranslate this Thai text into natural English. Return only the English translation. Preserve names, politeness and intent. Do not explain or add facts.\nThai: {}\nEnglish:",text)}))
         .send().await.map_err(|e| format!("Local translation request failed: {e}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("Ollama at {endpoint} could not find the selected model '{model}' (HTTP 404)."));
+    }
     if !response.status().is_success() {
         return Err(format!(
             "Ollama translation returned HTTP {}",

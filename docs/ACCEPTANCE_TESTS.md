@@ -1,5 +1,53 @@
 # Acceptance record
 
+## Version 0.4.0 — configured Ollama client and model loading
+
+| Check | Result | Evidence |
+|---|---|---|
+| Existing-service connection | Built | Ollama requests use `OLLAMA_HOST` and bypass HTTP proxies. PhasaForge does not start, stop, or reconfigure the external service. TypeScript and Rust production builds passed. |
+| Model selection and preload | Built; live model load pending | The selector combines live API tags with model-store manifests and displays ordinary model names. Saving requests `keep_alive=-1` from the existing service, checks `/api/ps`, and shows resident/VRAM size. |
+| Live machine check | Pending | At the last read-only API probe, `/api/tags` and `/api/ps` returned empty while model manifests existed under `F:\AI\Models\Ollama`; no Ollama process was started or stopped during this release. |
+| NSIS installer | Built | `release-artifacts/0.4.0/PhasaForge_0.4.0_x64-setup.exe` (9.56 MiB); SHA-256 `38C43AA3C3573421E7D29F9502A3F88D09989BA344ADB6207AB9E8A6EA48E558`. App was not installed/launched, so an actual model load remains unverified. |
+
+## Version 0.3.9 — selected model loading and residency
+
+| Check | Result | Evidence |
+|---|---|---|
+| Load on save and app startup | Built | Save calls Ollama's empty-prompt preload with `keep_alive=-1`, verifies the chosen model through `/api/ps`, and reports its resident/VRAM size. A saved local model is restored on app startup. Frontend and Rust production builds passed. |
+| Installed model selection | Built; live load pending | The dropdown uses the running Ollama service's `/api/tags` list only. Current local service returns zero models despite model manifests in `F:\AI\Models\Ollama`; Setup explains that Ollama must load that store before PhasaForge can start a selected model. |
+| NSIS installer | Built | `release-artifacts/0.3.9/PhasaForge_0.3.9_x64-setup.exe` (9.57 MiB); SHA-256 `8FC4752FC86788427A212D1A7B37853D4DE3BDA410DC08638DB35CFFEB455413`. App was not installed or launched, so model loading was not live-smoke-tested. |
+
+## Version 0.3.8 — Ollama model inventory
+
+| Check | Result | Evidence |
+|---|---|---|
+| Filesystem model-store reconciliation | Implemented; live Ollama restart confirmation pending | If API tags omit any manifest-backed models in `OLLAMA_MODELS`, startup checks `/api/ps`, saves the user environment setting, restarts the local tray app only when no model is resident, and waits for all tags. The selector contains API-confirmed models only. |
+| NSIS installer | Built | `release-artifacts/0.3.8/PhasaForge_0.3.8_x64-setup.exe` (9.55 MiB); SHA-256 `4C0375B709C09549A697A8F6F3DAEACED4CDEC74F4EC5F56A7E9F3A31779D501`. App was not installed/launched, so selector appearance was not live-smoke-tested. |
+
+## Version 0.3.7 — translated speech practice and Ollama fallback
+
+| Check | Result | Evidence |
+|---|---|---|
+| Practice English cross-check | Built | Practice now displays recognized Thai with its English translation, plus provider/status information, and uses larger text for both. Frontend TypeScript check and production build passed. |
+| Missing Ollama model recovery | Built | The active Ollama API reported zero models while a prior model tag remained selected. Only models returned by the active service are selectable; stale manifest files are identified separately. Ollama errors fall back to configured Azure F0 in both Practice and Meaning. |
+| NSIS installer | Built | `release-artifacts/0.3.7/PhasaForge_0.3.7_x64-setup.exe` (9.56 MiB); SHA-256 `63513BDAAB528F1EDFF3E70985C6E83C0E1B54231AAA80470B5BB1DFB6DA7A0D`. The app was not installed or launched by this build step. |
+
+## Version 0.3.6 — Thai recognition setup repair
+
+| Check | Result | Evidence |
+|---|---|---|
+| ASR setup dependency correction | Passed, live recovery on installed 0.3.5 | Found the venv and all model files were present but `numpy` was missing. Installed NumPy 1.26.4 into the app's isolated ASR environment; setup then retried the existing in-memory recording and sherpa-onnx returned `สวัสดีครับ`. |
+| Fresh setup includes NumPy | Passed, production installer built | Preparation now installs both `sherpa-onnx==2.0.1` and `numpy==1.26.4`, then checks for both packages and model files before marking setup complete. NSIS installer: `release-artifacts/0.3.6/PhasaForge_0.3.6_x64-setup.exe` (9.55 MiB; SHA-256 `6E23D30622E4331131E4719108A998D4A2E950422D31AB559C05EB974B39F7F6`); fresh-install smoke testing remains pending. |
+
+## Version 0.3.5 — local Thai speech recognition baseline
+
+| Check | Result | Evidence |
+|---|---|---|
+| Local ASR setup and transcription path | Implemented; live verification pending | Settings prepares an isolated Python environment, downloads sherpa-onnx and the int8 Thai Zipformer model into app data, and reports readiness. Practice resamples the in-memory recording and transcribes it locally after Stop; the temporary WAV is removed after the attempt. |
+| Streaming and pronunciation scoring | Not included | The selected published sherpa Thai model is offline, so no interim transcript appears while speaking. Transcription text is not a pronunciation or tone score. |
+| NSIS installer build | Passed, not install-smoke-tested | `release-artifacts/0.3.5/PhasaForge_0.3.5_x64-setup.exe` was produced successfully (9.53 MiB); the app was not installed or launched by this build step. |
+| Microphone, recognition quality, CPU/RAM | Pending | Must be checked with the user's actual microphone and speech before calling the baseline accepted. |
+
 ## Version 0.3.4 — linked syllable highlighting
 
 | Check | Result | Evidence |

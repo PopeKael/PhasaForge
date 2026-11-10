@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.4.1 — align Ollama with the configured model store
+
+- On startup, compare Ollama's API tags with every model manifest in the configured store, including partially visible model lists.
+- If no model is resident, persist `OLLAMA_MODELS`, restart the local Ollama tray app with that store, and wait for its API to confirm the models.
+- Never restart Ollama when a model is loaded, and offer only API-confirmed models for selection so disk-only files cannot lead to another 404 loop.
+
+## 0.4.0 — connect to configured Ollama model service
+
+- Honor the existing `OLLAMA_HOST` setting and bypass HTTP proxies for the local model API.
+- Show installed model tags from both the configured model store and Ollama API using ordinary names, without presenting filesystem discovery as a separate model type.
+- On Save, request the selected model from the existing Ollama service, keep it resident, and verify live memory status. Restore the saved selection at startup.
+- PhasaForge remains a client of the existing Ollama service; it does not launch, stop, or reconfigure Ollama.
+
+## 0.3.9 — load and retain selected Ollama model
+
+- Make Save Settings start the selected Ollama model, verify it appears in `/api/ps`, and keep it loaded with `keep_alive=-1`.
+- Restore a saved local model at app startup and show loaded memory/VRAM details in Setup.
+- Restrict the installed-model selector to tags exposed by the running Ollama service; explain when disk files are not available to that service.
+
+## 0.3.8 — show discovered Ollama model files
+
+- Restore model files found on disk to the Ollama model selector, including current `manifests-v2` stores.
+- Label models the running Ollama API does not confirm, and explain that a local request may fail until Ollama uses that model folder; Azure F0 fallback remains active.
+
+## 0.3.7 — translated speech practice
+
+- Show the recognized Thai transcript and its English translation together in Practice, with slightly larger text for both.
+- When a selected Ollama model is missing from the running service, report that mismatch and automatically use the already-configured Azure F0 translation as fallback.
+- Apply the same local-first/Azure-fallback behavior to sentence translations in the Meaning view.
+
+## 0.3.6 — Thai recognition setup repair
+
+- Fix the local speech-recognition setup to install and validate NumPy alongside sherpa-onnx; NumPy is needed to decode recorded audio for transcription.
+- Report the missing Python dependency by name if an existing setup is incomplete, so it no longer looks like the model download itself failed.
+- Verified live on the user's existing install: after installing the missing NumPy dependency, the saved recording transcribed locally as `สวัสดีครับ`.
+
+## 0.3.5 — local Thai speech recognition baseline
+
+- Added a full-page setup screen that opens on first launch until completed, then remains available from the existing Settings cog; field labels include small hover help buttons.
+- Added plain instructions within translation, local knowledge, playback, and speech-recognition sections. Existing Azure key status is checked automatically, and a saved key is not requested again.
+- Added startup discovery for the Ollama runtime and installed model tags. It queries the local model API when available, falls back to read-only Ollama manifest discovery when the service is stopped, and gives Windows install guidance when no runtime/model store is found. Discovery does not launch Ollama or load a model.
+- Added optional local Thai speech-to-text after recording stops in Practice, using the int8 Thai Zipformer model through sherpa-onnx on CPU.
+- Practice now prepares the speech recognizer automatically on the first Stop and transcribes that same recording, avoiding the previous “recognition not prepared” loop. The Ollama text model is explicitly described as separate from speech recognition.
+- Added one-click preparation for Thai recognition from the setup page. It creates an isolated Python environment, downloads the runtime and only the required model files to app data, and leaves the model out of the installer.
+- Starts a short-lived recognition process only for each transcription; it is not loaded while the app is idle. Microphone audio is staged in app data as a temporary WAV and removed after the recognition attempt; the replay remains in memory for the current app session.
+- Kept transcription separate from pronunciation and tone scoring. Live interim transcription remains future work because the available local Thai model is offline rather than streaming.
+- Live microphone acceptance and resource measurements are pending.
+
 ## 0.3.4 — linked syllable highlighting
 
 - Increased Current Sentence Thai text from 19 px to 22 px.

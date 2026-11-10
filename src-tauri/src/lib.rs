@@ -9,6 +9,7 @@ mod hotkey;
 mod language;
 mod selection;
 mod speech;
+mod thai_asr;
 
 #[tauri::command]
 fn list_thai_voices() -> Vec<speech::ThaiVoice> {
@@ -37,6 +38,21 @@ async fn prepare_mms_thai(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn thai_asr_status(app: tauri::AppHandle) -> Result<bool, String> {
+    thai_asr::is_ready(&app)
+}
+
+#[tauri::command]
+async fn prepare_thai_asr(app: tauri::AppHandle) -> Result<(), String> {
+    thai_asr::prepare(app).await
+}
+
+#[tauri::command]
+async fn transcribe_thai_audio(samples: Vec<f32>, sample_rate: u32, app: tauri::AppHandle) -> Result<String, String> {
+    thai_asr::transcribe(app, samples, sample_rate).await
+}
+
+#[tauri::command]
 fn hide_main_window(window: tauri::Window) -> Result<(), String> {
     window.hide().map_err(|error| error.to_string())
 }
@@ -57,7 +73,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
             let log_path = diagnostics::app_log_path(app.handle());
-            diagnostics::log(log_path.as_deref(), "app.start version=0.3.1");
+            diagnostics::log(log_path.as_deref(), "app.start version=0.4.1");
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
             if !test_mode {
                 if let Err(error) = hotkey::start(app.handle().clone()) {
@@ -94,10 +110,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai, prepare_mms_thai,
+            thai_asr_status, prepare_thai_asr, transcribe_thai_audio,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
-            language::ollama_models, language::pull_ollama_model, language::translate_local, language::test_local_translation,
+            language::ollama_models, language::discover_ollama, language::repair_ollama_model_store, language::pull_ollama_model, language::load_ollama_model, language::translate_local, language::test_local_translation,
             language::save_translator_key, language::translator_key_status, language::translate_azure,
-            language::translate_auto, language::test_azure_translation])
+            language::translate_auto, language::translate_ollama_auto, language::test_azure_translation])
         .build(tauri::generate_context!())
         .expect("PhasaForge failed to start");
     app.run(|_, event| {
