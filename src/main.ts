@@ -22,6 +22,7 @@ let recordingUrl: string | undefined;
 let activeTab = "words";
 let settingsOpen = false;
 let nativeThaiVoices: { id: string; name: string; language: string }[] = [];
+let nativeVoiceDiscoveryComplete = false;
 let ttsAudioUrl: string | undefined;
 let speechPlaying = false;
 const ttsAudio = document.createElement("audio");
@@ -217,17 +218,22 @@ function renderWords(words: WordCard[]): void {
     button.addEventListener("click", () => {
       root.querySelectorAll(".word-chip").forEach(x => x.classList.remove("chosen"));
       button.classList.add("chosen");
-      $("word-large").textContent = word.word;
+      const largeWord = $("word-large");
+      largeWord.replaceChildren();
+      const label = document.createElement("span"); label.className = "word-label"; label.textContent = word.word;
+      const playWord = document.createElement("button"); playWord.className = "secondary-button small word-play-button"; playWord.type = "button"; playWord.textContent = "▶ Play Thai word";
+      playWord.addEventListener("click", () => speak(word.word, true));
+      largeWord.append(label, playWord);
       const details = $("word-details");
       details.replaceChildren();
       const meaning = document.createElement("strong"); meaning.textContent = word.meaning ?? "Meaning not found in the local dictionary";
-      const reading = document.createElement("p"); reading.textContent = `Paiboon+ reading: ${word.reading ?? "unavailable"}`;
-      const playWord = document.createElement("button"); playWord.className = "secondary-button small"; playWord.type = "button"; playWord.textContent = "▶ Play Thai word";
-      playWord.addEventListener("click", () => speak(word.word));
+      const pronunciation = document.createElement("div"); pronunciation.className = "word-pronunciation";
+      const reading = document.createElement("span"); reading.className = "word-reading"; reading.textContent = `Paiboon+ reading: ${word.reading ?? "unavailable"}`;
       const syllables = document.createElement("div"); syllables.className = "word-syllables";
       if (word.syllables.length) for (const item of word.syllables) { const tag = document.createElement("span"); tag.className = "word-syllable"; tag.textContent = `${item.reading} · ${item.tone} tone`; syllables.append(tag); }
+      pronunciation.append(reading, syllables);
       const attribution = document.createElement("p"); attribution.textContent = `Source: ${word.source ?? "not found"}${word.confidence === null ? "" : ` · evidence status: ${word.confidence}`}`;
-      details.append(meaning, reading, playWord, syllables, attribution);
+      details.append(meaning, pronunciation, attribution);
       if (word.note) { const note = document.createElement("p"); note.textContent = word.note; details.append(note); }
       if (word.example_thai && word.example_english) { const example = document.createElement("p"); example.lang = "th"; example.textContent = `Example: ${word.example_thai} · ${word.example_english}`; details.append(example); }
     });
@@ -250,8 +256,17 @@ function updateVoiceOptions(): void {
   const values = nativeThaiVoices.map(v => "winrt:" + v.id).concat(voices.map(v => "web:" + v.name), [MMS_VOICE]);
   if (!values.includes(settings.voice)) settings.voice = nativeThaiVoices[0] ? "winrt:" + nativeThaiVoices[0].id : voices[0] ? "web:" + voices[0].name : MMS_VOICE;
   select.value = settings.voice;
+  localStorage.setItem(settingsKey, JSON.stringify(settings));
   const activeNative = nativeThaiVoices.find(v => "winrt:" + v.id === settings.voice);
   $("voice-note").textContent = activeNative ? "Windows Thai voice ready: " + activeNative.name : settings.voice === MMS_VOICE ? "Local MMS Thai voice is available; choose Download + test to prepare its model." : "Thai WebView voice ready: " + settings.voice.slice(4);
+  if (settings.voice === MMS_VOICE && nativeVoiceDiscoveryComplete && "__TAURI_INTERNALS__" in window) {
+    $("voice-note").textContent = "Warming the local Thai voice in the background…";
+    void invoke("prepare_mms_thai").then(() => {
+      if (!speechPlaying && settings.voice === MMS_VOICE) $("voice-note").textContent = "Local MMS Thai voice is ready on this PC.";
+    }).catch(error => {
+      if (!speechPlaying && settings.voice === MMS_VOICE) $("voice-note").textContent = "Local Thai voice setup failed: " + String(error);
+    });
+  }
 }
 
 function playSynthesized(bytes: number[], description: string): void {
@@ -269,7 +284,7 @@ function playSynthesized(bytes: number[], description: string): void {
   });
 }
 
-function speak(text: string): void {
+function speak(text: string, steady = false): void {
   if (!text.trim()) { $("voice-note").textContent = "Add Thai text before playing."; return; }
   if (mediaRecorder?.state === "recording") { $("voice-note").textContent = "Stop microphone recording before playing speech."; return; }
   if (settings.voice.startsWith("winrt:")) {
@@ -293,7 +308,7 @@ function speak(text: string): void {
     window.speechSynthesis?.cancel();
     ttsAudio.pause();
     $("voice-note").textContent = "Generating local Thai speech with MMS on CPU. First use downloads the optional model.";
-    void invoke<number[]>("synthesize_mms_thai", { text }).then(bytes => {
+    void invoke<number[]>("synthesize_mms_thai", { text, steady }).then(bytes => {
       playSynthesized(bytes, "Playing generated local MMS Thai speech (CPU). The text stayed on this PC.");
     }).catch(error => {
       $("voice-note").textContent = "Local Thai speech failed: " + String(error);
@@ -594,8 +609,11 @@ if ("__TAURI_INTERNALS__" in window) {
   const appWindow = getCurrentWindow();
   void invoke<typeof nativeThaiVoices>("list_thai_voices").then(voices => {
     nativeThaiVoices = voices;
+    nativeVoiceDiscoveryComplete = true;
     updateVoiceOptions();
   }).catch(error => {
+    nativeVoiceDiscoveryComplete = true;
+    updateVoiceOptions();
     $("voice-setup-note").textContent = "Windows native Thai voice discovery failed: " + String(error) + ". Install a Thai text-to-speech voice in Windows Settings.";
   });
   void invoke<string>("database_location").then(path => { $<HTMLInputElement>("database-path").value = path; }).catch(error => { $<HTMLInputElement>("database-path").value = String(error); });

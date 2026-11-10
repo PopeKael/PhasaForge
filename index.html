@@ -11,6 +11,12 @@
       <header class="titlebar">
         <img src="/assets/phasa-forge-master.png" alt="" class="brand-icon" />
         <strong>PhasaForge</strong>
+        <div class="titlebar-info">
+          <span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd>
+          <span class="titlebar-separator">|</span>
+          <span class="titlebar-hint">Opens near your selection and stays on-screen</span>
+          <span class="version">v0.3.4</span>
+        </div>
         <div class="window-actions">
           <button id="settings-toggle" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
           <button id="close" class="icon-button" title="Close to tray" aria-label="Close to tray">×</button>
@@ -110,7 +116,6 @@
         </section>
         <audio id="recorded-audio" hidden></audio>
       </main>
-      <footer><span>ⓘ</span><span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd><span class="footer-separator">|</span><span>Opens near your selection and stays on-screen</span><span class="version">v0.3.4</span></footer>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

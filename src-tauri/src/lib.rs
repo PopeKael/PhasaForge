@@ -21,11 +21,19 @@ async fn synthesize_thai(text: String, voice_id: String, rate: f64) -> Result<Ve
 }
 
 #[tauri::command]
-async fn synthesize_mms_thai(text: String, app: tauri::AppHandle) -> Result<Vec<u8>, String> {
+async fn synthesize_mms_thai(text: String, steady: bool, app: tauri::AppHandle) -> Result<Vec<u8>, String> {
     let dir = diagnostics::app_data_dir(&app).ok_or_else(|| {
         "Cannot resolve local app-data folder for the Thai voice model".to_string()
     })?;
-    speech::synthesize_mms(text, dir).await
+    speech::synthesize_mms(text, dir, steady).await
+}
+
+#[tauri::command]
+async fn prepare_mms_thai(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = diagnostics::app_data_dir(&app).ok_or_else(|| {
+        "Cannot resolve local app-data folder for the Thai voice model".to_string()
+    })?;
+    speech::prepare_mms(dir).await
 }
 
 #[tauri::command]
@@ -85,7 +93,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai,
+        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai, prepare_mms_thai,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
             language::ollama_models, language::pull_ollama_model, language::translate_local, language::test_local_translation,
             language::save_translator_key, language::translator_key_status, language::translate_azure,
@@ -95,6 +103,7 @@ pub fn run() {
     app.run(|_, event| {
         if matches!(event, RunEvent::Exit) {
             hotkey::stop();
+            speech::stop_mms_worker();
         }
     });
 }

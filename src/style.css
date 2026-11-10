@@ -7,11 +7,16 @@ button { cursor: pointer; }
 .titlebar { height: 40px; flex: none; display: flex; gap: 8px; align-items: center; padding: 4px 10px; border-bottom: 1px solid #24575c; background: #062c31cc; user-select: none; }
 .brand-icon { width: 30px; height: 30px; border-radius: 6px; object-fit: cover; }
 .titlebar strong { font-size: 17px; }
-.window-actions { margin-left: auto; display: flex; height: 100%; align-items: center; gap: 4px; }
+.titlebar-info { flex: 1; min-width: 0; margin-left: 2px; display: flex; align-items: center; gap: 5px; overflow: hidden; color: #c4d2d2; font-size: 9px; white-space: nowrap; }
+.titlebar-info kbd { flex: none; border: 1px solid #05c7c1; border-radius: 5px; padding: 2px 6px; color: #efffff; font: inherit; }
+.titlebar-separator { color: #76999b; }
+.titlebar-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.titlebar-info .version { flex: none; margin-left: auto; color: #7e9b9d; }
+.window-actions { flex: none; display: flex; height: 100%; align-items: center; gap: 4px; }
 .icon-button { width: 34px; height: 31px; background: transparent; border: 0; border-radius: 6px; font-size: 17px; }
 .icon-button:hover { background: #ffffff18; } #close:hover { background: #bd3943; }
 main { padding: 6px 9px 4px; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
-.source-row { display: grid; grid-template-columns: 1.55fr .95fr; gap: 7px; min-height: 101px; height: 101px; flex: none; }
+.source-row { display: grid; grid-template-columns: 1.55fr .95fr; gap: 7px; min-height: 90px; height: 90px; flex: none; }
 .source-panel, .audio-panel, .focus-panel, .tab-content, .character-card { border: 1px solid #42676b; background: linear-gradient(145deg,#10292d,#091d21); border-radius: 11px; }
 .source-panel { display: flex; flex-direction: column; padding: 7px 9px; min-width: 0; overflow: hidden; }
 .section-label { font-weight: 700; margin-bottom: 5px; font-size: 13px; }
@@ -34,8 +39,8 @@ button:disabled { opacity: .48; cursor: not-allowed; }
 .speed-head { font-size: 11px; font-weight: 600; } .speed-head output { font-size: 12px; }
 .speed-row { color: #a7bbbc; font-size: 11px; }
 input[type=range] { min-width: 30px; width: 100%; accent-color: #02c8c2; }
-.audio-note { min-height: 10px; color: #95aeaf; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.focus-panel { min-height: 133px; height: 133px; flex: none; padding: 6px 9px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+.audio-note { display: none; }
+.focus-panel { min-height: 116px; height: 116px; flex: none; padding: 6px 9px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
 .focus-head { display: flex; gap: 7px; align-items: baseline; color: #b9cbcc; font-size: 11px; }
 .focus-head strong { color: #f0f6f5; font-size: 13px; }
 .passage-nav { margin-left: auto; display: flex; align-items: center; gap: 7px; white-space: nowrap; }
@@ -67,11 +72,14 @@ input[type=range] { min-width: 30px; width: 100%; accent-color: #02c8c2; }
 .word-chips { display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; min-height: 38px; max-height: 38px; overflow-x: auto; overflow-y: hidden; }
 .word-chip { flex: none; min-width: 36px; height: 31px; padding: 0 8px; border: 1px solid #4d6d71; border-radius: 8px; background: #11272b; font-size: 15px; }
 .word-chip:hover, .word-chip.chosen { background: #006b6e; border-color: #08d2ca; box-shadow: 0 0 9px #00d3c377; }
-.word-card { flex: 1; min-height: 55px; display: grid; grid-template-columns: 70px 1fr; align-items: center; padding: 4px 8px; border: 1px solid #42676b; background: linear-gradient(145deg,#10292d,#091d21); border-radius: 11px; }
-.word-large { font-size: 29px; line-height: 1.1; display: grid; place-items: center; color: #fff; border-right: 1px solid #35757a; height: 100%; overflow-wrap: anywhere; }
-.word-details { padding-left: 9px; font-size: 11px; overflow: auto; max-height: 100%; }
+.word-card { flex: 1; min-height: 55px; min-width: 0; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); align-items: stretch; padding: 4px 8px; border: 1px solid #42676b; background: linear-gradient(145deg,#10292d,#091d21); border-radius: 11px; }
+.word-large { min-width: 0; max-width: min(42vw, 210px); padding: 0 10px 0 2px; font-size: 29px; line-height: 1.1; display: grid; align-content: center; justify-items: center; gap: 6px; text-align: center; color: #fff; border-right: 1px solid #35757a; overflow-wrap: anywhere; }
+.word-play-button { min-height: 27px; margin-top: 0; padding: 3px 6px; font-size: 10px; }
+.word-details { min-width: 0; padding-left: 9px; font-size: 11px; overflow: auto; }
 .word-details p { margin: 3px 0; color: #c6d2d2; }
-.word-syllables { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.word-pronunciation { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 7px; margin: 3px 0; }
+.word-reading { color: #c6d2d2; }
+.word-syllables { display: flex; flex-wrap: wrap; gap: 4px; }
 .word-syllable { padding: 2px 5px; border: 1px solid #37666a; border-radius: 5px; white-space: nowrap; }
 .tab-content h2 { margin: 0 0 5px; font-size: 14px; }
 .tab-content textarea { width: 100%; min-height: 55px; resize: vertical; border: 1px solid #4b6c70; border-radius: 7px; padding: 6px; background: #091d21; }
@@ -91,7 +99,4 @@ input[type=range] { min-width: 30px; width: 100%; accent-color: #02c8c2; }
 .setting-row input[readonly] { opacity: .8; }
 .check-row { justify-content: flex-start; } .check-row input { accent-color: #00c8c1; }
 .setting-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-footer { height: 24px; flex: none; border-top: 1px solid #24575c; background: #062b30; padding: 3px 9px; display: flex; align-items: center; gap: 7px; white-space: nowrap; font-size: 9px; }
-footer kbd { border: 1px solid #05c7c1; border-radius: 5px; padding: 2px 7px; color: #efffff; }
-.footer-separator { color: #76999b; margin: 0 2px; }.version { margin-left: auto; color: #7e9b9d; }
 @media (max-width: 700px) { .audio-panel { padding-inline: 5px; } .play-row { gap: 3px; } .primary-button, .secondary-button { padding-inline: 5px; } }
