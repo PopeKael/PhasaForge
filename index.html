@@ -15,7 +15,7 @@
           <span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd>
           <span class="titlebar-separator">|</span>
           <span class="titlebar-hint">Opens near your selection and stays on-screen</span>
-          <span class="version">v0.4.1</span>
+          <span class="version">v0.5.1</span>
         </div>
         <div class="window-actions">
           <button id="settings-toggle" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
@@ -26,7 +26,16 @@
       <main>
         <section class="source-row">
           <div class="source-panel">
-            <label class="section-label" for="source-text">Selected Text</label>
+            <div class="source-heading">
+              <label class="section-label" for="source-text">Selected Text</label>
+              <div class="selected-history-controls" role="group" aria-label="Selected-text history">
+                <button id="selected-history-previous" type="button" class="history-arrow" aria-label="Previous selected text" disabled>‹</button>
+                <span id="selected-history-position" aria-live="polite">0/0</span>
+                <button id="selected-history-next" type="button" class="history-arrow" aria-label="Next selected text" disabled>›</button>
+                <time id="selected-history-date" class="muted">No saved text</time>
+                <button id="clear-selected-history" type="button" class="secondary-button small" disabled>Clear</button>
+              </div>
+            </div>
             <textarea id="source-text" spellcheck="false" lang="th" placeholder="Select Thai text in another app and use the shortcut, or paste it here…"></textarea>
             <span id="capture-status" class="capture-status" role="status"></span>
           </div>

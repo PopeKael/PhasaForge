@@ -1,5 +1,19 @@
 # Acceptance record
 
+## Version 0.5.1 development — selected-text history
+
+| Check | Result | Evidence |
+|---|---|---|
+| Selected-text history | Automated tests added | Retains the ten newest distinct source texts and cached sentence cards locally. Identical text reuses its saved entry. Previous/Next restores the saved analysis and translations; it does not call the analyzer or translation providers. |
+| Persistence and FIFO | Automated tests added | Tests reopen saved text history with sentence readings/translations intact and verify ten-entry FIFO retention plus bounded navigation. |
+| Existing Current Sentence navigation | Preserved in source | Sentence arrows continue to index within the active selected-text entry; the new text-history arrows have separate controls and state. |
+| Hosted translation billing | Automated path inspection | New text requests eligible translations once. Restoring history and changing the selected translation provider do not automatically retranslate saved passages. Explicit Retry translation remains available. |
+| Upgrade from the previous single-text setting | Automated test passed | Existing selected text is migrated through local analysis without an automatic hosted translation request. |
+| UI/configuration tests | Passed | `npm run test:ui`: 15/15, including persistence, duplicate-text reuse, FIFO navigation, the migration billing guard and a guard that history restoration does not call analysis or provider commands. |
+| Rust tests | Passed | `cargo test --lib --manifest-path src-tauri/Cargo.toml --locked`: 13/13. |
+| Standalone executable | Built and launched | `npm run tauri build -- --no-bundle` embedded the production frontend. Direct launch opened the v0.5.1 interface at `tauri.localhost`; no microphone was used. Artifact: `release-artifacts/0.5.1-selected-text-history-verified/PhasaForge.exe` · 42,160,640 bytes · SHA-256 `1390F99E7F5E65C426981CC5CB0AB4AD9828FF5E82126530BC31B7EC88346431`. |
+| Microphone | Not used | This revision does not change recording history or activate the microphone. |
+
 ## Version 0.4.1 development — persistent configuration and recording history
 
 | Check | Result | Evidence |

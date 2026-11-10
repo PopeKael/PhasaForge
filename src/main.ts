@@ -6,6 +6,7 @@ import { listen } from "@tauri-apps/api/event";
 import { lessonViewState } from "./view-state.mjs";
 import { captureNotice, capturedSourceText } from "./capture-state.mjs";
 import { isConfigured, loadSettings, MMS_VOICE, persistSettings, SETTINGS_KEY } from "./configuration-state.mjs";
+import { loadSelectedTextHistory, nextSelectedTextIndex, previousSelectedTextIndex, rememberSelectedText, saveSelectedTextHistory, selectedTextIndex as findSelectedTextIndex, shouldAutoTranslateSelectedText } from "./selected-text-history.mjs";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -37,6 +38,10 @@ let ollamaDiscovery: OllamaDiscovery | undefined;
 let practiceHistory: PracticeRecording[] = [];
 let practiceHistoryIndex = -1;
 let selectedHistoryId: string | undefined;
+let selectedTextHistory: SelectedTextHistoryEntry<SentenceCard>[] = [];
+let selectedTextHistoryIndex = -1;
+let selectedTextHistoryId: string | undefined;
+let sourceEditTimer: ReturnType<typeof setTimeout> | undefined;
 const ttsAudio = document.createElement("audio");
 ttsAudio.id = "native-speech-audio";
 ttsAudio.hidden = true;
@@ -51,6 +56,7 @@ type Settings = { speed: number; voice: string; voiceConfigured: boolean; hotkey
 type OllamaRunningModel = { name: string; size: number; size_vram: number };
 type OllamaDiscovery = { installed: boolean; executable: string | null; service_available: boolean; model_store_found: boolean; model_directory: string; endpoint: string; models: string[]; api_models: string[]; manifest_models: string[]; running_models: OllamaRunningModel[] };
 type PracticeRecording = { id: string; recorded_at: string; mime_type: string; thai_text: string; english_text: string; status: string };
+type SelectedTextHistoryEntry<T> = { id: string; recorded_at: string; text: string; analysis: T[]; status: "processing" | "processed" | "analysis_failed" };
 type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
 type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
 
@@ -206,53 +212,164 @@ function renderSentence(card: SentenceCard | undefined): void {
   localStorage.setItem(selectedKey, source.value);
 }
 
-function renderPassage(): void {
-  const request = ++analysisRequest;
-  analysis = [];
+function persistSelectedTextHistory(): void {
+  try { saveSelectedTextHistory(localStorage, selectedTextHistory); }
+  catch (error) { $("capture-status").textContent = `Text history could not be saved locally: ${String(error)}`; }
+}
+
+function renderSelectedTextHistoryControls(): void {
+  const count = selectedTextHistory.length;
+  $("selected-history-position").textContent = count && selectedTextHistoryIndex >= 0 ? `${selectedTextHistoryIndex + 1}/${count}` : "0/0";
+  $("selected-history-previous").toggleAttribute("disabled", count === 0 || selectedTextHistoryIndex <= 0);
+  $("selected-history-next").toggleAttribute("disabled", count === 0 || selectedTextHistoryIndex >= count - 1);
+  $("clear-selected-history").toggleAttribute("disabled", count === 0);
+  const entry = selectedTextHistory[selectedTextHistoryIndex];
+  $("selected-history-date").textContent = entry ? new Date(entry.recorded_at).toLocaleString() : "No saved text";
+}
+
+function restoreSelectedTextHistory(index: number): void {
+  if (index < 0 || index >= selectedTextHistory.length) return;
+  clearTimeout(sourceEditTimer);
+  const entry = selectedTextHistory[index];
+  selectedTextHistoryIndex = index;
+  selectedTextHistoryId = entry.id;
+  source.value = entry.text;
+  localStorage.setItem(selectedKey, entry.text);
+  analysis = entry.analysis;
+  sentences = analysis.map(card => card.text);
   sentenceIndex = 0;
-  renderSentence(undefined);
-  const text = source.value.trim();
-  if (!text) return;
-  if (!("__TAURI_INTERNALS__" in window)) { $("capture-status").textContent = "Thai analysis runs in the PhasaForge desktop app."; return; }
-  $("capture-status").textContent = "Segmenting Thai with the bundled offline language engine…";
-  void invoke<SentenceCard[]>("analyze_text", { text }).then(cards => {
-    if (request !== analysisRequest) return;
-    analysis = cards;
-    sentences = cards.map(card => card.text);
+  renderSentence(analysis[0]);
+  if (entry.status === "processed") {
+    const missingTranslations = analysis.some(card => !card.meaning && settings.translationProvider !== "offline");
+    $("capture-status").textContent = `Restored saved text ${index + 1}/${selectedTextHistory.length} · no new lookup or translation request was made.`;
+    $("translation-status").textContent = missingTranslations
+      ? "Saved analysis restored. Some translations are unavailable; use Retry translation only when you choose."
+      : "Saved sentence results restored without provider requests.";
+  } else if (entry.status === "processing") {
+    $("capture-status").textContent = "This text was saved while its first lookup was in progress. It will not be automatically processed again.";
+    $("translation-status").textContent = "Saved results are incomplete; automatic retries are disabled to avoid duplicate provider requests.";
+  } else {
+    $("capture-status").textContent = "The first local Thai lookup failed. Navigating history will not repeat it.";
+    $("translation-status").textContent = "No provider request was repeated. Enter a new text to process another passage.";
+  }
+  renderSelectedTextHistoryControls();
+}
+
+function rememberAndProcessSelectedText(rawText: string, migratingLegacyText = false): void {
+  clearTimeout(sourceEditTimer);
+  const text = rawText.trim();
+  if (!text) {
+    selectedTextHistoryId = undefined;
+    selectedTextHistoryIndex = -1;
+    analysisRequest++;
+    analysis = [];
+    sentences = [];
     sentenceIndex = 0;
-    renderSentence(cards[0]);
-    $("capture-status").textContent = cards.length ? `Offline analysis ready · ${cards.length} sentence${cards.length === 1 ? "" : "s"}` : "No sentence text was found.";
-    if (settings.translationProvider !== "offline") {
+    renderSentence(undefined);
+    $("capture-status").textContent = "";
+    $("translation-status").textContent = "";
+    renderSelectedTextHistoryControls();
+    localStorage.setItem(selectedKey, "");
+    return;
+  }
+
+  const remembered = rememberSelectedText(selectedTextHistory, text, crypto.randomUUID(), new Date().toISOString());
+  selectedTextHistory = remembered.entries;
+  selectedTextHistoryIndex = findSelectedTextIndex(selectedTextHistory, remembered.entry!.id);
+  persistSelectedTextHistory();
+  restoreSelectedTextHistory(selectedTextHistoryIndex);
+  if (!remembered.created) return;
+
+  const entry = remembered.entry!;
+  const request = analysisRequest;
+  $("capture-status").textContent = "Looking up this text locally. Its saved results will be reused when you revisit it.";
+  if (!("__TAURI_INTERNALS__" in window)) {
+    entry.status = "analysis_failed";
+    persistSelectedTextHistory();
+    $("capture-status").textContent = "Thai analysis runs in the PhasaForge desktop app.";
+    return;
+  }
+
+  void invoke<SentenceCard[]>("analyze_text", { text: entry.text }).then(cards => {
+    if (!selectedTextHistory.some(saved => saved.id === entry.id)) return;
+    entry.analysis = cards;
+    entry.status = "processed";
+    persistSelectedTextHistory();
+    if (selectedTextHistoryId === entry.id && request === analysisRequest) {
+      analysis = cards;
+      sentences = cards.map(card => card.text);
+      sentenceIndex = 0;
+      renderSentence(cards[0]);
+      $("capture-status").textContent = cards.length ? `Processed once · ${cards.length} sentence${cards.length === 1 ? "" : "s"} saved to text history.` : "No sentence text was found.";
+      $("translation-status").textContent = !shouldAutoTranslateSelectedText(settings.translationProvider, migratingLegacyText)
+        ? migratingLegacyText ? "Older selected text was restored and analyzed locally. No translation request was made; use Retry translation only if needed." : "Offline text analysis saved. No hosted translation was requested."
+        : "Translating each eligible sentence once; completed results will be saved with this text.";
+      renderSelectedTextHistoryControls();
+    }
+    if (shouldAutoTranslateSelectedText(settings.translationProvider, migratingLegacyText)) {
       for (let i = 0; i < cards.length; i++) {
         const card = cards[i];
         if (card.meaning) continue;
-        void translateCard(card, request, i);
+        void translateCard(card, request, i, entry.id);
       }
     }
   }).catch(error => {
-    if (request !== analysisRequest) return;
-    $("capture-status").textContent = `Thai analysis failed: ${String(error)}`;
+    if (!selectedTextHistory.some(saved => saved.id === entry.id)) return;
+    entry.status = "analysis_failed";
+    persistSelectedTextHistory();
+    if (selectedTextHistoryId !== entry.id || request !== analysisRequest) return;
+    $("capture-status").textContent = `Thai analysis failed: ${String(error)}. This passage is saved and will not be retried during navigation.`;
     $("meaning-line").textContent = "Meaning: local dictionary could not be opened.";
   });
 }
 
-async function translateCard(card: SentenceCard, request: number, index: number): Promise<void> {
+async function refreshCurrentTextAnalysis(): Promise<void> {
+  const entry = selectedTextHistory.find(item => item.id === selectedTextHistoryId);
+  if (!entry || !("__TAURI_INTERNALS__" in window)) return;
+  const request = ++analysisRequest;
+  const priorTranslations = new Map(entry.analysis
+    .filter(card => card.meaning && !card.meaning_source?.startsWith("ThaiReader"))
+    .map(card => [card.text, { meaning: card.meaning, meaning_source: card.meaning_source }]));
+  $("capture-status").textContent = "Refreshing local word lookup after the saved correction; existing translations will be reused.";
+  try {
+    const cards = await invoke<SentenceCard[]>("analyze_text", { text: entry.text });
+    for (const card of cards) Object.assign(card, priorTranslations.get(card.text) ?? {});
+    entry.analysis = cards;
+    entry.status = "processed";
+    persistSelectedTextHistory();
+    if (selectedTextHistoryId === entry.id && request === analysisRequest) {
+      analysis = cards;
+      sentences = cards.map(card => card.text);
+      sentenceIndex = Math.min(sentenceIndex, Math.max(0, cards.length - 1));
+      renderSentence(cards[sentenceIndex]);
+      $("capture-status").textContent = "Local word lookup refreshed. Existing sentence translations were reused; no provider request was made.";
+    }
+  } catch (error) {
+    if (selectedTextHistoryId === entry.id && request === analysisRequest) $("capture-status").textContent = `Local word lookup refresh failed: ${String(error)}`;
+  }
+}
+
+async function translateCard(card: SentenceCard, request: number, index: number, textHistoryId = selectedTextHistoryId): Promise<void> {
+  const provider = settings.translationProvider;
+  const model = settings.translationModel;
   try {
     let result: { english: string; provider: string; latency_ms: number; cached: boolean };
-    if (settings.translationProvider === "ollama") {
-      result = await invoke("translate_ollama_auto", { text: card.text, model: settings.translationModel });
+    if (provider === "ollama") {
+      result = await invoke("translate_ollama_auto", { text: card.text, model });
     } else {
-      result = await invoke("translate_auto", { text: card.text, model: settings.translationModel });
+      result = await invoke("translate_auto", { text: card.text, model });
     }
-    if (request !== analysisRequest || !analysis[index] || analysis[index].text !== card.text) return;
     card.meaning = result.english;
     card.meaning_source = `${result.provider} · machine translation${result.cached ? " · cached" : ""}`;
+    const entry = selectedTextHistory.find(item => item.id === textHistoryId);
+    if (entry?.analysis[index] === card) persistSelectedTextHistory();
+    if (request !== analysisRequest || selectedTextHistoryId !== textHistoryId || analysis[index] !== card) return;
     if (index === sentenceIndex) renderSentence(card);
-    $("translation-status").textContent = `${result.cached ? "Cached" : "Translated"} in ${result.latency_ms} ms via ${result.provider}.`;
+    $("translation-status").textContent = `${result.cached ? "Cached" : "Translated"} in ${result.latency_ms} ms via ${result.provider}. Saved with this text.`;
   } catch (error) {
-    if (request !== analysisRequest) return;
+    if (request !== analysisRequest || selectedTextHistoryId !== textHistoryId) return;
     if (index === sentenceIndex && !card.meaning) $("meaning-line").textContent = "Meaning: translation unavailable; see Settings for provider status.";
-    $("translation-status").textContent = `Translation failed: ${String(error)}`;
+    $("translation-status").textContent = `Translation failed and was not automatically retried while navigating history: ${String(error)}`;
   }
 }
 
@@ -422,6 +539,7 @@ function showTab(tab: string): void {
   renderViews();
 }
 
+selectedTextHistory = loadSelectedTextHistory<SentenceCard>(localStorage);
 source.value = localStorage.getItem(selectedKey) ?? "";
 speed.value = String(settings.speed);
 $<HTMLInputElement>("settings-speed").value = String(settings.speed);
@@ -432,12 +550,27 @@ $<HTMLInputElement>("model-download-name").value = "";
 $<HTMLSelectElement>("hotkey-modifier").value = settings.hotkeyModifier;
 $<HTMLSelectElement>("hotkey-key").value = settings.hotkeyKey;
 renderShortcut();
-renderPassage();
+const savedTextIndex = selectedTextHistory.findIndex(entry => entry.text === source.value.trim());
+if (savedTextIndex >= 0) {
+  restoreSelectedTextHistory(savedTextIndex);
+} else if (source.value.trim()) {
+  rememberAndProcessSelectedText(source.value, true);
+} else {
+  analysis = [];
+  sentences = [];
+  sentenceIndex = 0;
+  renderSentence(undefined);
+  renderSelectedTextHistoryControls();
+}
 updateVoiceOptions();
 updateProviderControls();
 window.speechSynthesis?.addEventListener("voiceschanged", updateVoiceOptions);
 
-source.addEventListener("input", renderPassage);
+source.addEventListener("input", () => {
+  localStorage.setItem(selectedKey, source.value);
+  clearTimeout(sourceEditTimer);
+  sourceEditTimer = setTimeout(() => rememberAndProcessSelectedText(source.value), 450);
+});
 speed.addEventListener("input", () => {
   $<HTMLOutputElement>("speed-output").value = `${Number(speed.value).toFixed(2).replace(/0$/, "")}×`;
   $<HTMLInputElement>("settings-speed").value = speed.value;
@@ -455,6 +588,25 @@ $("stop-speech").addEventListener("click", () => {
 });
 $("previous").addEventListener("click", () => { sentenceIndex = Math.max(0, sentenceIndex - 1); renderSentence(analysis[sentenceIndex]); });
 $("next").addEventListener("click", () => { sentenceIndex = Math.min(analysis.length - 1, sentenceIndex + 1); renderSentence(analysis[sentenceIndex]); });
+$("selected-history-previous").addEventListener("click", () => restoreSelectedTextHistory(previousSelectedTextIndex(selectedTextHistoryIndex, selectedTextHistory.length)));
+$("selected-history-next").addEventListener("click", () => restoreSelectedTextHistory(nextSelectedTextIndex(selectedTextHistoryIndex, selectedTextHistory.length)));
+$("clear-selected-history").addEventListener("click", () => {
+  if (!selectedTextHistory.length || !window.confirm("Clear all saved selected-text history and cached sentence results on this device?")) return;
+  selectedTextHistory = [];
+  selectedTextHistoryIndex = -1;
+  selectedTextHistoryId = undefined;
+  persistSelectedTextHistory();
+  source.value = "";
+  localStorage.removeItem(selectedKey);
+  analysisRequest++;
+  analysis = [];
+  sentences = [];
+  sentenceIndex = 0;
+  renderSentence(undefined);
+  $("capture-status").textContent = "Selected-text history and cached results were cleared from this device.";
+  $("translation-status").textContent = "";
+  renderSelectedTextHistoryControls();
+});
 document.querySelectorAll<HTMLButtonElement>(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab ?? "words")));
 $("settings-toggle").addEventListener("click", () => {
   if (initialSetupPending) { settingsOpen = true; renderViews(); return; }
@@ -480,7 +632,7 @@ $("translation-provider").addEventListener("change", () => {
   if (azureKeyConfigured) updateAzureSetupStatus(true);
   if (settings.translationProvider === "ollama") void refreshOllamaModels();
   reconcileInitialSetup();
-  if (source.value.trim()) renderPassage();
+  $("translation-status").textContent = "Saved text-history results are unchanged. New text uses this provider; use Retry translation to explicitly request a new result.";
 });
 $<HTMLSelectElement>("translation-model").addEventListener("change", event => {
   const model = (event.currentTarget as HTMLSelectElement).value;
@@ -665,7 +817,7 @@ $("save-correction").addEventListener("click", async () => {
   try {
     await invoke("save_correction", { word: $<HTMLInputElement>("correction-word").value, meaning: $<HTMLInputElement>("correction-meaning").value, reading: $<HTMLInputElement>("correction-reading").value || null, note: "Saved from PhasaForge Settings" });
     $("correction-status").textContent = "Saved to the local SQLite knowledge base.";
-    renderPassage();
+    void refreshCurrentTextAnalysis();
   } catch (error) { $("correction-status").textContent = `Could not save: ${String(error)}`; }
 });
 $("refresh-dictionary").addEventListener("click", async () => {
@@ -1092,8 +1244,7 @@ if ("__TAURI_INTERNALS__" in window) {
     const capture = event.payload;
     // A failed/empty capture replaces the previous source; never imply stale text was newly selected.
     source.value = capturedSourceText(capture);
-    sentenceIndex = 0;
-    renderPassage();
+    rememberAndProcessSelectedText(source.value);
     $("capture-status").textContent = captureNotice(capture);
     const cursor = await cursorPosition();
     const anchor = capture.rect ?? { x: cursor.x, y: cursor.y, width: 0, height: 0 };

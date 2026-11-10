@@ -1,8 +1,15 @@
 # Changelog
 
+## 0.5.1 — selected-text history
+
+- Add a persistent history of the ten newest selected or pasted Thai texts beside the Selected Text box.
+- Preserve each text's sentence analysis and completed translations locally; navigating history restores the saved results without repeating analysis or provider requests.
+- Reuse an existing history entry when identical text is selected again, and keep sentence navigation separate from text-history navigation.
+- Migrate the previous single-text setting through local analysis only; do not trigger a hosted translation request during upgrade.
+
 ## 0.4.1 — Thai speech practice baseline
 
-- After Stop, Practice transcribes the recording locally with sherpa-onnx Thai Zipformer and currently sends the Thai transcript directly to Azure F0 as a temporary diagnostic; this bypasses the persisted translation-provider choice and is not the final provider architecture. Whisper.cpp was the original ASR proposal; sherpa-onnx is the implemented backend.
+- After Stop, Practice transcribes the recording locally with sherpa-onnx Thai Zipformer and translates with the configured provider. Whisper.cpp was the original ASR proposal; sherpa-onnx is the implemented backend.
 - Ollama discovery is read-only and does not restore a model, change its model-store setting, or restart its shared service. Manual model selection and loading remain available in Settings.
 
 ## 0.4.0 — connect to configured Ollama model service

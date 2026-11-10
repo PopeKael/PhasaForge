@@ -20,9 +20,15 @@ main { padding: 6px 9px 4px; flex: 1; min-height: 0; display: flex; flex-directi
 .source-row { display: grid; grid-template-columns: 1.55fr .95fr; gap: 7px; min-height: 90px; height: 90px; flex: none; }
 .source-panel, .audio-panel, .focus-panel, .tab-content, .character-card { border: 1px solid #42676b; background: linear-gradient(145deg,#10292d,#091d21); border-radius: 11px; }
 .source-panel { display: flex; flex-direction: column; padding: 7px 9px; min-width: 0; overflow: hidden; }
-.section-label { font-weight: 700; margin-bottom: 5px; font-size: 13px; }
+.source-heading { display: flex; align-items: center; justify-content: space-between; gap: 5px; min-height: 21px; }
+.section-label { font-weight: 700; margin: 0; font-size: 13px; white-space: nowrap; }
+.selected-history-controls { min-width: 0; display: flex; align-items: center; gap: 3px; }
+.selected-history-controls .history-arrow { width: 19px; height: 19px; font-size: 16px; }
+#selected-history-position { min-width: 24px; text-align: center; font-size: 9px; }
+#selected-history-date { max-width: 95px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px; }
+#clear-selected-history { min-height: 19px; margin: 0; padding: 1px 4px; font-size: 8px; }
 .capture-status { min-height: 10px; color: #8fb4b5; font-size: 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#source-text { width: 100%; height: 100%; min-height: 0; resize: none; border: 0; outline: 0; background: transparent; overflow: auto; line-height: 1.55; font-size: 15px; padding: 1px 3px 1px 0; }
+#source-text { width: 100%; flex: 1; height: 100%; min-height: 0; resize: none; border: 0; outline: 0; background: transparent; overflow: auto; line-height: 1.55; font-size: 15px; padding: 1px 3px 1px 0; }
 #source-text::placeholder { color: #8aa4a6; }
 .audio-panel { padding: 4px 5px; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; overflow: hidden; }
 .play-row { display: grid; grid-template-columns: .82fr 1.35fr .65fr; gap: 3px; min-width: 0; }

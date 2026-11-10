@@ -1,6 +1,6 @@
 # PhasaForge
 
-PhasaForge is a compact Windows Thai study popup. Version 0.4.0 connects to the configured Ollama service, lists models found by its installed model store/API, and loads the saved selection through that existing service.
+PhasaForge is a compact Windows Thai study popup. Version 0.5.1 adds persistent Selected Text history with locally saved sentence analysis and translation results, so switching between saved passages does not repeat provider requests.
 
 ## What 0.4.0 adds
 
@@ -13,6 +13,10 @@ Setup persists provider, model, voice, playback speed and hotkey selections. New
 Practice keeps the ten newest microphone recordings in local app data, including their original audio, Zipformer transcript, English translation and timestamp. History selection restores the saved take and results without retranscribing or re-translating it. Clearing history also removes its audio files. Practice translation now follows the saved provider choice; Offline examples cannot translate newly spoken sentences.
 
 Ollama discovery is read-only: PhasaForge does not change the shared service's model-store setting or restart it. Loading a selected local model remains an explicit Save action.
+
+## What 0.5.1 adds
+
+The Selected Text box keeps the ten most recent distinct Thai passages. Sentence analysis and available translations are saved locally with each passage; moving between text-history entries restores those results without rerunning the local lookup, Ollama, or Azure translation. Selecting the same text again reuses its saved entry. Current Sentence arrows remain independent from Selected Text history. Upgrading the previous single-text setting performs local analysis only and does not make an automatic translation request.
 
 ## What 0.3.7 adds
 
