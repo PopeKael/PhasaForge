@@ -3,6 +3,8 @@ import { PhysicalPosition } from "@tauri-apps/api/dpi";
 import { distanceToWorkArea, placeNearAnchor } from "./placement.mjs";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { disable as disableAutoStart, enable as enableAutoStart, isEnabled as isAutoStartEnabled } from "@tauri-apps/plugin-autostart";
+import { applyAutoStartPreference } from "./autostart-state.mjs";
 import { lessonViewState } from "./view-state.mjs";
 import { captureNotice, capturedSourceText } from "./capture-state.mjs";
 import { isConfigured, loadSettings, MMS_VOICE, persistSettings, SETTINGS_KEY } from "./configuration-state.mjs";
@@ -23,6 +25,7 @@ let recordingUrl: string | undefined;
 let activeTab = "words";
 let settingsOpen = false;
 let initialSetupPending = false;
+let currentAutoStartEnabled = false;
 let nativeThaiVoices: { id: string; name: string; language: string }[] = [];
 let nativeVoiceDiscoveryComplete = false;
 let selectedVoiceReady = false;
@@ -52,7 +55,7 @@ ttsAudio.addEventListener("error", () => {
   finishSpeech();
 });
 
-type Settings = { speed: number; voice: string; voiceConfigured: boolean; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string; translationProviderConfigured: boolean };
+type Settings = { speed: number; voice: string; voiceConfigured: boolean; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string; translationProviderConfigured: boolean; autoStart: boolean };
 type OllamaRunningModel = { name: string; size: number; size_vram: number };
 type OllamaDiscovery = { installed: boolean; executable: string | null; service_available: boolean; model_store_found: boolean; model_directory: string; endpoint: string; models: string[]; api_models: string[]; manifest_models: string[]; running_models: OllamaRunningModel[] };
 type PracticeRecording = { id: string; recorded_at: string; mime_type: string; thai_text: string; english_text: string; status: string };
@@ -835,6 +838,25 @@ $("save-settings").addEventListener("click", async () => {
   settings.hotkeyModifier = $<HTMLSelectElement>("hotkey-modifier").value;
   settings.hotkeyKey = $<HTMLSelectElement>("hotkey-key").value;
   settings.speed = Number(speed.value);
+  const requestedAutoStart = $<HTMLInputElement>("auto-start").checked;
+  if ("__TAURI_INTERNALS__" in window) {
+    try {
+      if (requestedAutoStart !== currentAutoStartEnabled) {
+        currentAutoStartEnabled = await applyAutoStartPreference(requestedAutoStart, currentAutoStartEnabled, {
+          enable: enableAutoStart,
+          disable: disableAutoStart,
+        });
+      }
+      settings.autoStart = currentAutoStartEnabled;
+      $("auto-start-status").textContent = currentAutoStartEnabled
+        ? "Enabled for this Windows user. PhasaForge will open when you sign in."
+        : "Disabled. PhasaForge will not open automatically when you sign in.";
+    } catch (error) {
+      settings.autoStart = currentAutoStartEnabled;
+      $<HTMLInputElement>("auto-start").checked = currentAutoStartEnabled;
+      $("auto-start-status").textContent = `Windows startup setting could not be changed: ${String(error)}`;
+    }
+  }
   persistSettings(localStorage, settings);
   renderShortcut();
   try {
@@ -1222,6 +1244,18 @@ renderViews();
 
 if ("__TAURI_INTERNALS__" in window) {
   const appWindow = getCurrentWindow();
+  void isAutoStartEnabled().then(enabled => {
+    currentAutoStartEnabled = enabled;
+    settings.autoStart = enabled;
+    $<HTMLInputElement>("auto-start").checked = enabled;
+    $("auto-start-status").textContent = enabled
+      ? "Enabled for this Windows user. PhasaForge will open when you sign in."
+      : "Disabled. PhasaForge will not open automatically when you sign in.";
+    persistSettings(localStorage, settings);
+  }).catch(error => {
+    $<HTMLInputElement>("auto-start").disabled = true;
+    $("auto-start-status").textContent = `Could not read the Windows startup setting: ${String(error)}`;
+  });
   void loadPracticeHistory();
   // Discover Ollama at startup and restore the saved model when Local Ollama is selected.
   void refreshOllamaModels();

@@ -15,7 +15,7 @@
           <span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd>
           <span class="titlebar-separator">|</span>
           <span class="titlebar-hint">Opens near your selection and stays on-screen</span>
-          <span class="version">v0.5.1</span>
+          <span class="version">v0.6.1</span>
         </div>
         <div class="window-actions">
           <button id="settings-toggle" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
@@ -145,6 +145,8 @@
           <label class="setting-row"><span class="setting-label">Shortcut modifier <button class="help-tip" type="button" title="Choose which Ctrl or Alt key begins the selected-text shortcut." aria-label="Shortcut modifier help">?</button></span><select id="hotkey-modifier"><option value="right_ctrl">Right Ctrl</option><option value="left_ctrl">Left Ctrl</option><option value="right_alt">Right Alt</option><option value="left_alt">Left Alt</option></select></label>
           <label class="setting-row"><span class="setting-label">Shortcut key <button class="help-tip" type="button" title="Choose the second key pressed with the modifier to open PhasaForge on selected text." aria-label="Shortcut key help">?</button></span><select id="hotkey-key"><option value="up">Up Arrow</option><option value="down">Down Arrow</option><option value="space">Space</option></select></label>
           <p class="muted" id="hotkey-status">Only the chosen shortcut is used; unrelated keys pass through. No other keyboard input is stored.</p>
+          <label class="setting-row"><span class="setting-label">Start PhasaForge when I sign in to Windows</span><input id="auto-start" type="checkbox" /></label>
+          <p class="muted" id="auto-start-status">Checking the current Windows startup setting…</p>
           <label class="setting-row"><span class="setting-label">Thai voice <button class="help-tip" type="button" title="Choose an installed Windows/WebView Thai voice, or the optional local MMS voice." aria-label="Thai voice help">?</button></span><select id="voice-select"><option value="">No Thai voice detected</option></select></label>
           <button id="test-voice" class="secondary-button small">Test selected Thai voice</button>
           <button id="install-mms-voice" class="secondary-button small">Download + test local Thai voice</button>

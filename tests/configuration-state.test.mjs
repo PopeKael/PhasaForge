@@ -14,20 +14,22 @@ test("new configurations select MMS but remain in setup until required settings 
   const storage = memoryStorage();
   const settings = loadSettings(storage);
   assert.equal(settings.voice, MMS_VOICE);
+  assert.equal(settings.autoStart, false, "new configurations do not register Windows startup without opting in");
   assert.equal(settings.translationProvider, "azure");
   assert.equal(settings.voiceConfigured, false);
   assert.equal(settings.translationProviderConfigured, false);
   assert.equal(isConfigured(settings), false);
 });
 
-test("saved provider, model, voice, and unrelated settings survive reload and migration", () => {
-  const old = { ...DEFAULT_SETTINGS, translationProvider: "ollama", translationModel: "qwen3:4b", translationProviderConfigured: true, voice: "winrt:thai-voice", voiceConfigured: true, speed: 0.85, customSetting: "keep" };
+test("saved provider, model, voice, auto-start, and unrelated settings survive reload and migration", () => {
+  const old = { ...DEFAULT_SETTINGS, translationProvider: "ollama", translationModel: "qwen3:4b", translationProviderConfigured: true, voice: "winrt:thai-voice", voiceConfigured: true, speed: 0.85, autoStart: true, customSetting: "keep" };
   const storage = memoryStorage({ [SETTINGS_KEY]: JSON.stringify(old) });
   const loaded = loadSettings(storage);
   assert.equal(loaded.translationProvider, "ollama");
   assert.equal(loaded.translationModel, "qwen3:4b");
   assert.equal(loaded.voice, "winrt:thai-voice");
   assert.equal(loaded.speed, 0.85);
+  assert.equal(loaded.autoStart, true);
   assert.equal(loaded.customSetting, "keep");
   assert.equal(isConfigured(loaded), true, "a saved provider and voice remain configured even when a provider is temporarily unavailable");
   assert.ok(storage.getItem(TRANSLATION_DEFAULT_KEY));

@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   translationProvider: "azure",
   translationModel: "",
   translationProviderConfigured: false,
+  autoStart: false,
 });
 
 export function loadSettings(storage) {

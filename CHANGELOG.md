@@ -1,5 +1,11 @@
 # Changelog
 
+# 0.6.1 — Windows sign-in startup option
+
+- Added an opt-in Setup checkbox to launch PhasaForge when the current Windows user signs in.
+- The setting reflects the Windows autostart registration and is saved with the other device settings. Startup registration is changed only when the user saves a different selection.
+- New configurations leave autostart disabled.
+
 ## 0.5.1 — selected-text history
 
 - Add a persistent history of the ten newest selected or pasted Thai texts beside the Selected Text box.
