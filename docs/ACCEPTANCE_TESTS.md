@@ -6,7 +6,8 @@
 |---|---|---|
 | Startup preference logic | Passed | UI tests verify default-off and persistence. Focused unit tests verify unchanged state makes no OS registration call, changed state selects enable/disable, and failures are not reported as success. |
 | Tauri startup integration | Passed | The standalone app queried the Tauri plugin successfully and showed the actual state as disabled in Setup. The checkbox remained unchecked; no Windows startup registration was changed during verification. |
-| Standalone executable | Passed | `npm run tauri build -- --no-bundle` embedded `../dist`; direct launch of the copied executable opened the `tauri.localhost` PhasaForge interface with no Vite listener on port 5173. Artifact: `release-artifacts/0.6.1-autostart-verified/PhasaForge.exe` · 42,318,336 bytes · SHA-256 `91917B870B59715FA6F78757C07BEC0BCE41ED0713B9BE63EFDA47101DDBAC91`. No installer was built. |
+| Standalone executable | Passed | `npm run tauri build -- --no-bundle` embedded `../dist`; direct launch of the copied executable opened the `tauri.localhost` PhasaForge interface with no Vite listener on port 5173. Artifact: `release-artifacts/0.6.1-autostart-verified/PhasaForge.exe` · 42,318,336 bytes · SHA-256 `91917B870B59715FA6F78757C07BEC0BCE41ED0713B9BE63EFDA47101DDBAC91`. |
+| Secondary bundles | Passed | Full `npm run tauri build` produced NSIS `PhasaForge_0.6.1_x64-setup.exe` · 10,072,203 bytes · SHA-256 `344CBB2061CEC8DD07F3A12FE6B175C149F75C010C716894CEF1AB0142619F16` and MSI `PhasaForge_0.6.1_x64_en-US.msi` · 15,007,744 bytes · SHA-256 `4036D3D13427943BFCC5F61934886FFA71D02750EB1CF54D00B1E443D999A51F`. Neither installer was run. |
 
 ## Version 0.5.1 development — selected-text history
 
