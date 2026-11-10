@@ -6,6 +6,10 @@ PhasaForge is a compact Windows Thai study popup. Version 0.4.0 connects to the 
 
 Setup uses `OLLAMA_HOST` and lists model tags found in the configured store or returned by Ollama. Save Settings asks the existing service to load the selected model with persistent keep-alive, checks `/api/ps`, and reports resident memory/VRAM. PhasaForge never starts or stops the Ollama service. The Practice Thai/English cross-check and Azure fallback remain included.
 
+## What 0.4.1 development adds
+
+Ollama discovery is read-only: PhasaForge does not change the shared service's model-store setting or restart it. Saving a selected local model can still ask the existing service to load that model. After Stop, Practice transcribes locally with sherpa-onnx Thai Zipformer and currently sends the transcript directly to Azure F0 as a temporary diagnostic; this bypasses the saved sentence-translation provider and is not the final provider architecture.
+
 ## What 0.3.7 adds
 
 Practice shows the Thai words recognized from the recording and the English translation of those same words together. When a selected local Ollama model cannot be found by the running Ollama service, PhasaForge falls back to the configured Azure Translator F0 key and reports which provider returned the translation. Sentence translations use the same fallback rule.
@@ -20,7 +24,7 @@ Hovering a Thai sentence chunk or its romanized reading highlights the matching 
 - Supplements the existing ThaiReader SQLite data with 13,567 additional English-Wiktionary/Kaikki Thai entries, retaining source attribution and CC BY-SA licensing. It excludes Kaikki literary quotations and external audio. User corrections remain separate and survive seed upgrades.
 - Automatically translates sentences with the Microsoft Azure Translator F0 resource when configured. Successful results are cached in the local SQLite database; exact stored examples and word lookup remain immediate and offline. A 1.9 million character monthly application cap leaves headroom under F0's 2 million monthly free characters. The API key is stored in Windows Credential Manager, never in app settings, the database or logs. Azure failures use the selected Ollama model as a fallback when available. Ollama remains optional and local requests go only to `127.0.0.1:11434`.
 - On the prior test PC, `qwen3.8-27b-ud-iq3-xxs:ctx32k` preserved an unfamiliar ingredient (“olive oil”) that smaller 4B/9B models mistranslated, but uses far more memory than hosted translation. Machine translation can still be wrong.
-- Generates Thai speech locally through Meta MMS-TTS (`facebook/mms-tts-tha`) on CPU, with sentence and selected-text playback. The optional model is fetched on first use and is licensed CC BY-NC 4.0, so commercial use is not permitted under that model license. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; audio text remains local.
+- Reads Thai aloud through an installed Windows Thai voice when available, then a Thai WebView voice; local Meta MMS-TTS (`facebook/mms-tts-tha`) is the last automatic fallback and can be selected explicitly. MMS runs on CPU, downloads its optional model on first use, and requires Python 3.10+ with `torch`, `transformers`, and `numpy`. Its CC BY-NC 4.0 model license is unsuitable for commercial use.
 - Preserves local microphone recording and replay. Optional local Thai ASR transcribes after recording stops; live interim transcription and pronunciation scoring are not included in this release.
 - Enforces one running instance. The default Right Ctrl + Up hotkey captures first, then opens/focuses the popup. The tray menu and window dragging remain.
 - Avoids the 0.2.0 Opera clipboard crash by never flushing a foreign OLE data object; see the [Issue #4 crash analysis and test limits](docs/ISSUE_4.md). Diagnostic logs omit selected text.
@@ -47,7 +51,7 @@ npm run tauri build -- --bundles nsis
 
 Optional local translation: install [Ollama for Windows](https://ollama.com/download/windows). PhasaForge checks for Ollama and installed models at startup, including its configured model directory; it does not start the service or load a model during discovery. Choose Local Ollama to select a model already installed, or type a model tag to download one. The model-name field is blank by default. Use **Test 5 references** to compare local output with bundled ThaiReader examples. On the test PC, the better-performing local 27B model occupies about 10.9 GB on disk; the Qwen 4B/9B alternatives used less storage but mistranslated an unfamiliar ingredient. Runtime memory depends on Ollama and available hardware.
 
-**Settings → Download + test local Thai voice** prepares and tests the local MMS voice. It uses CPU inference and stores the model under PhasaForge app data. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; set `PHASAFORGE_PYTHON` if Python is not on PATH. Alternatively, Settings can use an installed Windows/WebView Thai voice. English substitution is disabled.
+**Settings → Download + test local Thai voice** prepares and tests the local MMS voice. It uses CPU inference and stores the model under PhasaForge app data. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; set `PHASAFORGE_PYTHON` if Python is not on PATH. Windows and WebView Thai voices are retained as alternatives. English substitution is disabled.
 
 ## Data and licensing
 

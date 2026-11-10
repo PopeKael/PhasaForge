@@ -1,10 +1,9 @@
 # Changelog
 
-## 0.4.1 — align Ollama with the configured model store
+## 0.4.1 — Thai speech practice baseline
 
-- On startup, compare Ollama's API tags with every model manifest in the configured store, including partially visible model lists.
-- If no model is resident, persist `OLLAMA_MODELS`, restart the local Ollama tray app with that store, and wait for its API to confirm the models.
-- Never restart Ollama when a model is loaded, and offer only API-confirmed models for selection so disk-only files cannot lead to another 404 loop.
+- After Stop, Practice transcribes the recording locally with sherpa-onnx Thai Zipformer and currently sends the Thai transcript directly to Azure F0 as a temporary diagnostic; this bypasses the persisted translation-provider choice and is not the final provider architecture. Whisper.cpp was the original ASR proposal; sherpa-onnx is the implemented backend.
+- Ollama discovery is read-only and does not restore a model, change its model-store setting, or restart its shared service. Manual model selection and loading remain available in Settings.
 
 ## 0.4.0 — connect to configured Ollama model service
 

@@ -16,6 +16,8 @@ npm run tauri build -- --bundles nsis
 
 The 0.3.0 release files and hidden UI evidence are under `release-artifacts/0.3.0/`: `PhasaForge.exe`, `PhasaForge_0.3.0_x64-setup.exe`, checksum manifest, and UI screenshots. Local binaries are ignored by Git; the source and release instructions are committed. The installer is unsigned. The optional MMS model is downloaded separately and is not bundled.
 
+For routine development acceptance, build the frontend and release executable, then copy `src-tauri/target/release/phasaforge.exe` to a named folder such as `release-artifacts/0.4.1-recovery-test/PhasaForge.exe` and launch that file directly. Do not install the app for routine testing. NSIS/MSI packaging is a separate, secondary artifact check and does not replace delivery of the standalone executable.
+
 ## Installer smoke test
 
 The Windows CI workflow installs the current-user NSIS package silently, verifies its executable and uninstaller registration, uninstalls it silently, and checks cleanup. The acceptance record documents the 0.3.0 local install/uninstall verification.

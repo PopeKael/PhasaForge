@@ -2,8 +2,6 @@ use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}, process::Command, sync::Mutex, time::Duration};
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, State};
 
 const SEED_DB: &[u8] = include_bytes!("../../assets/learner.sqlite");
@@ -726,93 +724,6 @@ pub async fn discover_ollama() -> OllamaDiscovery {
         api_models,
         manifest_models,
         running_models,
-    }
-}
-
-/// Reconcile the Windows Ollama tray app with the model store configured for
-/// PhasaForge. Ollama reads OLLAMA_MODELS only when its server starts, so a
-/// running but empty server must be restarted before disk-discovered models
-/// become loadable through the API. Never interrupt an Ollama process with a
-/// resident model, and never touch a non-local endpoint.
-#[tauri::command]
-pub async fn repair_ollama_model_store() -> Result<String, String> {
-    #[cfg(not(target_os = "windows"))]
-    { return Err("Automatic Ollama model-store repair is supported on Windows only.".into()); }
-
-    #[cfg(target_os = "windows")]
-    {
-        let endpoint = ollama_base_url();
-        let parsed = reqwest::Url::parse(&endpoint).map_err(|error| error.to_string())?;
-        if !matches!(parsed.host_str(), Some("127.0.0.1" | "localhost" | "::1")) {
-            return Err("Automatic repair is limited to the Ollama service on this PC.".into());
-        }
-        let client = Client::builder().no_proxy().connect_timeout(Duration::from_millis(700)).timeout(Duration::from_secs(3)).build().map_err(|e| e.to_string())?;
-        let tags_response = client.get(ollama_url("/api/tags")).send().await.map_err(|e| format!("Ollama did not respond at {endpoint}: {e}"))?;
-        if !tags_response.status().is_success() { return Err(format!("Ollama returned HTTP {} while checking its model store.", tags_response.status())); }
-        let tags = tags_response.json::<serde_json::Value>().await.map_err(|e| e.to_string())?;
-        let api_models: Vec<String> = tags["models"].as_array().into_iter().flatten()
-            .filter_map(|model| model["name"].as_str().map(str::to_owned)).collect();
-
-        let model_directory = ollama_model_directory();
-        let manifests = model_directory.join("manifests");
-        let manifests_v2 = model_directory.join("manifests-v2");
-        let mut disk_models = Vec::new();
-        let mut visited = 0;
-        collect_ollama_manifests(&manifests, &manifests, &mut disk_models, &mut visited, 0);
-        collect_ollama_manifests(&manifests_v2, &manifests_v2, &mut disk_models, &mut visited, 0);
-        if disk_models.is_empty() { return Err(format!("No Ollama model manifests were found in {}.", model_directory.display())); }
-        let missing_models: Vec<&String> = disk_models.iter().filter(|disk_model| {
-            !api_models.iter().any(|api_model| api_model.eq_ignore_ascii_case(disk_model))
-        }).collect();
-        if missing_models.is_empty() { return Ok(format!("Ollama already reports all {} model(s) in {}.", disk_models.len(), model_directory.display())); }
-
-        let running_response = client.get(ollama_url("/api/ps")).send().await.map_err(|e| e.to_string())?;
-        if !running_response.status().is_success() { return Err(format!("Ollama returned HTTP {} while checking loaded models.", running_response.status())); }
-        let running = running_response.json::<serde_json::Value>().await.map_err(|e| e.to_string())?;
-        if running["models"].as_array().is_some_and(|models| !models.is_empty()) {
-            return Err(format!("Ollama reports {} of {} stored models, and has a model loaded in memory. PhasaForge left it running and did not restart Ollama.", api_models.len(), disk_models.len()));
-        }
-
-        let executable = find_ollama_executable().ok_or_else(|| "Ollama's executable was not found, so its model store cannot be repaired automatically.".to_string())?;
-        let app_executable = executable.parent().unwrap_or_else(|| Path::new(".")).join("ollama app.exe");
-        if !app_executable.is_file() { return Err(format!("Ollama desktop app was not found beside {}.", executable.display())); }
-
-        // Persist the intended store for future logins and pass it explicitly
-        // to this restart so the service does not depend on a stale parent env.
-        let mut setx = Command::new("setx.exe");
-        setx.arg("OLLAMA_MODELS").arg(&model_directory);
-        setx.creation_flags(0x08000000);
-        let result = setx.output().map_err(|e| format!("Could not save OLLAMA_MODELS for this Windows user: {e}"))?;
-        if !result.status.success() { return Err(format!("Could not save OLLAMA_MODELS: {}", String::from_utf8_lossy(&result.stderr).trim())); }
-
-        // This path is reached only when the local API has no available tags,
-        // no resident models, and the configured disk store contains models.
-        let mut stop = Command::new("taskkill.exe");
-        stop.args(["/IM", "ollama app.exe", "/T", "/F"]);
-        stop.creation_flags(0x08000000);
-        let _ = stop.output(); // It is fine if the tray process was already gone.
-        tokio::time::sleep(Duration::from_millis(700)).await;
-        let mut launch = Command::new(&app_executable);
-        launch.env("OLLAMA_MODELS", &model_directory).current_dir(app_executable.parent().unwrap_or_else(|| Path::new(".")));
-        launch.creation_flags(0x08000000);
-        launch.spawn().map_err(|e| format!("Could not restart Ollama with model store {}: {e}", model_directory.display()))?;
-
-        let deadline = std::time::Instant::now() + Duration::from_secs(20);
-        loop {
-            if let Ok(response) = client.get(ollama_url("/api/tags")).send().await {
-                if let Ok(value) = response.json::<serde_json::Value>().await {
-                    let count = value["models"].as_array().map_or(0, Vec::len);
-                    let names: Vec<&str> = value["models"].as_array().into_iter().flatten().filter_map(|model| model["name"].as_str()).collect();
-                    let all_present = disk_models.iter().all(|disk_model| names.iter().any(|api_model| api_model.eq_ignore_ascii_case(disk_model)));
-                    if all_present { return Ok(format!("Ollama restarted with {} and now reports all {} stored model(s).", model_directory.display(), disk_models.len())); }
-                    if count >= disk_models.len() { return Err(format!("Ollama reports {count} models after restart, but the configured store contains {} entries and one or more are still missing.", disk_models.len())); }
-                }
-            }
-            if std::time::Instant::now() >= deadline {
-                return Err("Ollama was restarted with the configured model store, but its API did not report those models within 20 seconds.".into());
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
     }
 }
 

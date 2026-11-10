@@ -112,7 +112,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai, prepare_mms_thai,
             thai_asr_status, prepare_thai_asr, transcribe_thai_audio,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
-            language::ollama_models, language::discover_ollama, language::repair_ollama_model_store, language::pull_ollama_model, language::load_ollama_model, language::translate_local, language::test_local_translation,
+            language::ollama_models, language::discover_ollama, language::pull_ollama_model, language::load_ollama_model, language::translate_local, language::test_local_translation,
             language::save_translator_key, language::translator_key_status, language::translate_azure,
             language::translate_auto, language::translate_ollama_auto, language::test_azure_translation])
         .build(tauri::generate_context!())

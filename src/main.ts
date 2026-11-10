@@ -32,7 +32,6 @@ let lastRecordingBlob: Blob | undefined;
 let transcriptionInProgress = false;
 let thaiAsrPreparation: Promise<void> | undefined;
 let ollamaDiscovery: OllamaDiscovery | undefined;
-let ollamaStoreRepairAttempted = false;
 const ttsAudio = document.createElement("audio");
 ttsAudio.id = "native-speech-audio";
 ttsAudio.hidden = true;
@@ -504,23 +503,6 @@ async function refreshOllamaModels(): Promise<void> {
     select.add(new Option(models.length ? "Choose an installed model…" : "No installed models found", ""));
     for (const model of models) select.add(new Option(model, model));
     if (models.includes(settings.translationModel)) select.value = settings.translationModel;
-    const apiModelNames = new Set(discovery.api_models.map(model => model.toLowerCase()));
-    const missingStoreModels = discovery.manifest_models.filter(model => !apiModelNames.has(model.toLowerCase()));
-    if (discovery.service_available && missingStoreModels.length > 0 && !ollamaStoreRepairAttempted) {
-      ollamaStoreRepairAttempted = true;
-      $("ollama-discovery-status").textContent = `Ollama reports ${discovery.api_models.length} of ${discovery.manifest_models.length} models from ${discovery.model_directory}. Checking that no model is resident, then aligning Ollama with this store…`;
-      $("provider-status").textContent = "Repairing Ollama model-store access…";
-      try {
-        const repair = await invoke<string>("repair_ollama_model_store");
-        $("provider-status").textContent = repair;
-        await refreshOllamaModels();
-        return;
-      } catch (error) {
-        $("ollama-discovery-status").textContent = `Model files exist in ${discovery.model_directory}, but Ollama could not be aligned automatically: ${String(error)}`;
-        $("provider-status").textContent = String(error);
-        return;
-      }
-    }
     const activeModel = discovery.running_models.find(model => model.name.toLowerCase() === settings.translationModel.toLowerCase());
     const memoryText = (bytes: number): string => `${(bytes / (1024 ** 3)).toFixed(1)} GiB`;
     $("ollama-residency-status").textContent = activeModel
@@ -532,7 +514,7 @@ async function refreshOllamaModels(): Promise<void> {
       $("ollama-discovery-status").textContent = discovery.api_models.length
         ? `Connected to Ollama at ${discovery.endpoint}. It reports ${discovery.api_models.length} installed model${discovery.api_models.length === 1 ? "" : "s"}${discovery.manifest_models.length > discovery.api_models.length ? `; ${discovery.manifest_models.length} model files are also detected locally` : ""}. Select a model and save to load it.`
         : discovery.manifest_models.length
-          ? `Ollama's API is not yet reporting the ${discovery.manifest_models.length} model files in ${discovery.model_directory}. PhasaForge checks and aligns the store during setup.`
+          ? `Found ${discovery.manifest_models.length} local model entries in ${discovery.model_directory}, but Ollama's API does not report them. Discovery is read-only; PhasaForge leaves the shared Ollama service unchanged.`
           : `Connected to Ollama at ${discovery.endpoint}, but no installed models or local model entries were found.`;
     } else if (discovery.installed && discovery.manifest_models.length) {
       $("ollama-discovery-status").textContent = `Ollama is installed${discovery.executable ? ` at ${discovery.executable}` : ""}, but its service is not responding. Model files are present in ${discovery.model_directory}; start Ollama, then check again here.`;
@@ -549,18 +531,6 @@ async function refreshOllamaModels(): Promise<void> {
       $("provider-status").textContent = discovery.service_available
           ? models.length ? `Choose a model above; Save Settings asks the running Ollama service to start it and keeps it loaded.` : "No installed Ollama models. Type a model name and click Download model."
         : discovery.installed ? "Ollama is installed but not running. Open Ollama, then choose Check local Ollama." : "Ollama is not installed. Follow the install location shown above, then reopen Setup.";
-      if (discovery.service_available && settings.translationModel && discovery.api_models.includes(settings.translationModel) && !activeModel) {
-        $("provider-status").textContent = `Restoring your saved local model ${settings.translationModel} into memory…`;
-        $("ollama-residency-status").textContent = `Loading ${settings.translationModel}…`;
-        try {
-          const loaded = await invoke<OllamaRunningModel>("load_ollama_model", { model: settings.translationModel });
-          $("ollama-residency-status").textContent = `Loaded and resident in Ollama: ${loaded.name}${loaded.size ? ` · ${(loaded.size / (1024 ** 3)).toFixed(1)} GiB resident` : ""}${loaded.size_vram ? ` · ${(loaded.size_vram / (1024 ** 3)).toFixed(1)} GiB VRAM` : ""}.`;
-          $("provider-status").textContent = `${loaded.name} is running and ready for local translation.`;
-        } catch (error) {
-          $("ollama-residency-status").textContent = `Saved model did not load: ${String(error)}`;
-          $("provider-status").textContent = `PhasaForge could not restore ${settings.translationModel}: ${String(error)}`;
-        }
-      }
     }
   } catch (error) {
     select.add(new Option("Ollama unavailable", ""));
@@ -757,21 +727,7 @@ async function transcribePracticeRecording(blob: Blob): Promise<void> {
 
 async function translatePracticeTranscript(thai: string): Promise<void> {
   try {
-    let result: { english: string; provider: string; latency_ms: number; cached: boolean };
-    if (settings.translationProvider === "offline") {
-      const cards = await invoke<SentenceCard[]>("analyze_text", { text: thai });
-      const example = cards.find(card => card.text === thai && card.meaning);
-      if (!example?.meaning) {
-        $("heard-translation").textContent = "No saved English example is available offline for this phrase.";
-        $("heard-translation-status").textContent = "Select Azure F0 in Settings to translate new phrases.";
-        return;
-      }
-      result = { english: example.meaning, provider: example.meaning_source ?? "Offline ThaiReader example", latency_ms: 0, cached: true };
-    } else if (settings.translationProvider === "ollama") {
-      result = await invoke("translate_ollama_auto", { text: thai, model: settings.translationModel });
-    } else {
-      result = await invoke("translate_auto", { text: thai, model: settings.translationModel });
-    }
+    const result = await invoke<{ english: string; provider: string; latency_ms: number; cached: boolean }>("translate_azure", { text: thai });
     $("heard-translation").textContent = result.english;
     $("heard-translation-status").textContent = `${result.cached ? "Saved translation" : "Translated"} via ${result.provider}${result.latency_ms ? ` · ${result.latency_ms} ms` : ""}.`;
     $("practice-status").textContent = "Recognition and English translation complete. Compare both with the sentence above; this is not pronunciation or tone scoring.";
