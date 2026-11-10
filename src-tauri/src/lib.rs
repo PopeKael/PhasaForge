@@ -7,6 +7,7 @@ use tauri::{
 mod diagnostics;
 mod hotkey;
 mod language;
+mod practice_history;
 mod selection;
 mod speech;
 mod thai_asr;
@@ -72,6 +73,7 @@ pub fn run() {
         }))
         .setup(|app| {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
+            app.manage(practice_history::open(app.handle()).map_err(std::io::Error::other)?);
             let log_path = diagnostics::app_log_path(app.handle());
             diagnostics::log(log_path.as_deref(), "app.start version=0.4.1");
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
@@ -111,6 +113,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai, prepare_mms_thai,
             thai_asr_status, prepare_thai_asr, transcribe_thai_audio,
+            practice_history::list_practice_history, practice_history::save_practice_recording, practice_history::update_practice_recording, practice_history::practice_recording_audio, practice_history::clear_practice_history,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
             language::ollama_models, language::discover_ollama, language::pull_ollama_model, language::load_ollama_model, language::translate_local, language::test_local_translation,
             language::save_translator_key, language::translator_key_status, language::translate_azure,

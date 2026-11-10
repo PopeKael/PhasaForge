@@ -8,7 +8,11 @@ Setup uses `OLLAMA_HOST` and lists model tags found in the configured store or r
 
 ## What 0.4.1 development adds
 
-Ollama discovery is read-only: PhasaForge does not change the shared service's model-store setting or restart it. Saving a selected local model can still ask the existing service to load that model. After Stop, Practice transcribes locally with sherpa-onnx Thai Zipformer and currently sends the transcript directly to Azure F0 as a temporary diagnostic; this bypasses the saved sentence-translation provider and is not the final provider architecture.
+Setup persists provider, model, voice, playback speed and hotkey selections. New configurations select Meta MMS-TTS Thai; its model is downloaded only when the user explicitly tests that voice. Saved Windows or WebView voice choices remain selected and are reported unavailable if they are missing on the current device. An unready optional voice model does not block the configured app from opening.
+
+Practice keeps the ten newest microphone recordings in local app data, including their original audio, Zipformer transcript, English translation and timestamp. History selection restores the saved take and results without retranscribing or re-translating it. Clearing history also removes its audio files. Practice translation now follows the saved provider choice; Offline examples cannot translate newly spoken sentences.
+
+Ollama discovery is read-only: PhasaForge does not change the shared service's model-store setting or restart it. Loading a selected local model remains an explicit Save action.
 
 ## What 0.3.7 adds
 
@@ -46,8 +50,10 @@ npm run tauri dev
 Build NSIS installer and executable:
 
 ```powershell
-npm run tauri build -- --bundles nsis
+npm run tauri build -- --no-bundle
 ```
+
+This Tauri CLI build runs the production frontend step and embeds the configured `../dist` frontend in the standalone app. Use the Tauri CLI build rather than raw `cargo build --release` when preparing a runnable test executable. Packaging an NSIS/MSI installer is a separate step.
 
 Optional local translation: install [Ollama for Windows](https://ollama.com/download/windows). PhasaForge checks for Ollama and installed models at startup, including its configured model directory; it does not start the service or load a model during discovery. Choose Local Ollama to select a model already installed, or type a model tag to download one. The model-name field is blank by default. Use **Test 5 references** to compare local output with bundled ThaiReader examples. On the test PC, the better-performing local 27B model occupies about 10.9 GB on disk; the Qwen 4B/9B alternatives used less storage but mistranslated an unfamiliar ingredient. Runtime memory depends on Ollama and available hardware.
 

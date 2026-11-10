@@ -5,16 +5,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { lessonViewState } from "./view-state.mjs";
 import { captureNotice, capturedSourceText } from "./capture-state.mjs";
+import { isConfigured, loadSettings, MMS_VOICE, persistSettings, SETTINGS_KEY } from "./configuration-state.mjs";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const source = $<HTMLTextAreaElement>("source-text");
 const speed = $<HTMLInputElement>("speed");
 const selectedKey = "phasaforge.selected-text";
-const settingsKey = "phasaforge.settings";
-const setupSeenKey = "phasaforge.setup-seen.0.4.1";
-const translationDefaultKey = "phasaforge.translation-default.0.3.5";
-const MMS_VOICE = "mms:facebook/mms-tts-tha";
+const settingsKey = SETTINGS_KEY;
 let sentences: string[] = [];
 let sentenceIndex = 0;
 let mediaRecorder: MediaRecorder | undefined;
@@ -22,16 +20,23 @@ let recordedChunks: Blob[] = [];
 let stream: MediaStream | undefined;
 let recordingUrl: string | undefined;
 let activeTab = "words";
-let settingsOpen = !localStorage.getItem(setupSeenKey);
+let settingsOpen = false;
+let initialSetupPending = false;
 let nativeThaiVoices: { id: string; name: string; language: string }[] = [];
 let nativeVoiceDiscoveryComplete = false;
+let selectedVoiceReady = false;
+let readiness: { voiceReady: boolean | null; azureKeyConfigured: boolean | null; ollamaServiceAvailable: boolean | null; ollamaModelAvailable: boolean | null; ollamaModelLoaded: boolean | null } = { voiceReady: null, azureKeyConfigured: null, ollamaServiceAvailable: null, ollamaModelAvailable: null, ollamaModelLoaded: null };
 let ttsAudioUrl: string | undefined;
 let speechPlaying = false;
 let thaiAsrReady = false;
-let lastRecordingBlob: Blob | undefined;
+let pendingRecordingBlob: Blob | undefined;
+let pendingRecordingId: string | undefined;
 let transcriptionInProgress = false;
 let thaiAsrPreparation: Promise<void> | undefined;
 let ollamaDiscovery: OllamaDiscovery | undefined;
+let practiceHistory: PracticeRecording[] = [];
+let practiceHistoryIndex = -1;
+let selectedHistoryId: string | undefined;
 const ttsAudio = document.createElement("audio");
 ttsAudio.id = "native-speech-audio";
 ttsAudio.hidden = true;
@@ -42,9 +47,10 @@ ttsAudio.addEventListener("error", () => {
   finishSpeech();
 });
 
-type Settings = { speed: number; voice: string; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string; translationProviderConfigured: boolean };
+type Settings = { speed: number; voice: string; voiceConfigured: boolean; hotkeyModifier: string; hotkeyKey: string; translationProvider: string; translationModel: string; translationProviderConfigured: boolean };
 type OllamaRunningModel = { name: string; size: number; size_vram: number };
 type OllamaDiscovery = { installed: boolean; executable: string | null; service_available: boolean; model_store_found: boolean; model_directory: string; endpoint: string; models: string[]; api_models: string[]; manifest_models: string[]; running_models: OllamaRunningModel[] };
+type PracticeRecording = { id: string; recorded_at: string; mime_type: string; thai_text: string; english_text: string; status: string };
 type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
 type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
 
@@ -135,25 +141,16 @@ function renderSentencePronunciation(card: SentenceCard | undefined): void {
   }
 }
 
-const defaults: Settings = { speed: 0.75, voice: "", hotkeyModifier: "right_ctrl", hotkeyKey: "up", translationProvider: "azure", translationModel: "", translationProviderConfigured: true };
-const loadSettings = (): Settings => {
-  try { const saved = JSON.parse(localStorage.getItem(settingsKey) ?? "{}"); const value = { ...defaults, ...saved }; if (saved.translationProviderConfigured !== true) { value.translationProvider = "azure"; value.translationProviderConfigured = true; } return value; }
-  catch { return defaults; }
-};
-let settings = loadSettings();
-if (!localStorage.getItem(translationDefaultKey)) {
-  settings.translationProvider = "azure";
-  settings.translationModel = "";
-  settings.translationProviderConfigured = true;
-  localStorage.setItem(settingsKey, JSON.stringify(settings));
-  localStorage.setItem(translationDefaultKey, "set");
-}
+let settings = loadSettings(localStorage) as Settings;
+initialSetupPending = !isConfigured(settings);
+settingsOpen = initialSetupPending;
 let analysis: SentenceCard[] = [];
 let analysisRequest = 0;
 let azureKeyConfigured = false;
 
 function updateAzureSetupStatus(configured: boolean): void {
   azureKeyConfigured = configured;
+  readiness.azureKeyConfigured = configured;
   $("azure-key-editor").hidden = configured;
   $("replace-azure-key").hidden = !configured;
   const provider = settings.translationProvider;
@@ -161,12 +158,40 @@ function updateAzureSetupStatus(configured: boolean): void {
   $("translation-setup-status").textContent = configured
     ? `Azure F0 is already configured and its key is saved securely. ${provider === "azure" ? "Azure is selected; there is nothing to set up here." : `${providerName} is currently selected; choose Azure only if you want to switch back.`}`
     : `No saved Azure key was found. Azure is the default hosted translator; enter a key only if you want to use it. ${provider === "azure" ? "Until then, new sentence translations will not be available." : `${providerName} is currently selected.`}`;
+  reconcileInitialSetup();
 }
 
 function updateProviderControls(): void {
   const provider = $<HTMLSelectElement>("translation-provider").value;
   $("azure-provider-controls").hidden = provider !== "azure";
   $("ollama-model-controls").hidden = provider !== "ollama";
+}
+
+function updateConfigurationStatus(): void {
+  const provider = settings.translationProvider;
+  const providerName = provider === "ollama" ? "Local Ollama" : provider === "offline" ? "Offline examples" : "Azure Translator F0";
+  let providerStatus = provider === "offline"
+    ? "Ready · stored examples only"
+    : provider === "azure"
+      ? readiness.azureKeyConfigured === true ? "Ready · key saved in Windows Credential Manager" : readiness.azureKeyConfigured === false ? "Not ready · save an Azure F0 key or choose another provider" : "Checking key…"
+      : readiness.ollamaServiceAvailable !== true ? "Not ready · Ollama service unavailable"
+        : !settings.translationModel ? "Not ready · no model selected"
+          : readiness.ollamaModelAvailable !== true ? `Not ready · ${settings.translationModel} not listed by Ollama`
+            : readiness.ollamaModelLoaded === true ? `Ready · ${settings.translationModel} loaded` : `Available · ${settings.translationModel} is not loaded; Save to load it`;
+  const voiceOption = $<HTMLSelectElement>("voice-select").selectedOptions[0];
+  const voiceName = settings.voice === MMS_VOICE ? "Meta MMS-TTS Thai" : voiceOption?.textContent?.trim() || settings.voice || "No Thai voice selected";
+  const voiceStatus = readiness.voiceReady === true ? "Ready" : settings.voice === MMS_VOICE ? "Not prepared · optional model" : "Unavailable";
+  const asrStatus = thaiAsrReady ? "Thai Zipformer ready" : "Thai Zipformer not prepared yet";
+  $("configuration-summary").textContent = `${providerName}: ${providerStatus}\nTranslation model: ${provider === "ollama" ? settings.translationModel || "none selected" : provider === "azure" ? "Azure F0" : "not used"}\nSpeech voice: ${voiceName} · ${voiceStatus}\nSpeech recognition: sherpa-onnx Thai Zipformer · ${asrStatus}`;
+}
+
+function reconcileInitialSetup(): void {
+  const wasPending = initialSetupPending;
+  initialSetupPending = !isConfigured(settings);
+  if (initialSetupPending) settingsOpen = true;
+  else if (wasPending) settingsOpen = false;
+  updateConfigurationStatus();
+  renderViews();
 }
 
 function renderSentence(card: SentenceCard | undefined): void {
@@ -286,19 +311,16 @@ function updateVoiceOptions(): void {
   for (const voice of voices) select.add(new Option(voice.name + " (" + voice.lang + " · WebView)", "web:" + voice.name));
   select.add(new Option("MMS Thai · local CPU · CC BY-NC 4.0", MMS_VOICE));
   const values = nativeThaiVoices.map(v => "winrt:" + v.id).concat(voices.map(v => "web:" + v.name), [MMS_VOICE]);
-  if (!values.includes(settings.voice)) settings.voice = nativeThaiVoices[0] ? "winrt:" + nativeThaiVoices[0].id : voices[0] ? "web:" + voices[0].name : MMS_VOICE;
+  if (!values.includes(settings.voice) && nativeVoiceDiscoveryComplete) {
+    select.add(new Option(`${settings.voice} (unavailable on this device)`, settings.voice), 0);
+  }
   select.value = settings.voice;
-  localStorage.setItem(settingsKey, JSON.stringify(settings));
+  persistSettings(localStorage, settings);
   const activeNative = nativeThaiVoices.find(v => "winrt:" + v.id === settings.voice);
   $("voice-note").textContent = activeNative ? "Windows Thai voice ready: " + activeNative.name : settings.voice === MMS_VOICE ? "Local MMS Thai voice is available; choose Download + test to prepare its model." : "Thai WebView voice ready: " + settings.voice.slice(4);
-  if (settings.voice === MMS_VOICE && nativeVoiceDiscoveryComplete && "__TAURI_INTERNALS__" in window) {
-    $("voice-note").textContent = "Warming the local Thai voice in the background…";
-    void invoke("prepare_mms_thai").then(() => {
-      if (!speechPlaying && settings.voice === MMS_VOICE) $("voice-note").textContent = "Local MMS Thai voice is ready on this PC.";
-    }).catch(error => {
-      if (!speechPlaying && settings.voice === MMS_VOICE) $("voice-note").textContent = "Local Thai voice setup failed: " + String(error);
-    });
-  }
+  selectedVoiceReady = settings.voice === MMS_VOICE ? false : values.includes(settings.voice);
+  readiness.voiceReady = selectedVoiceReady ? true : nativeVoiceDiscoveryComplete ? false : null;
+  reconcileInitialSetup();
 }
 
 function playSynthesized(bytes: number[], description: string): void {
@@ -341,8 +363,14 @@ function speak(text: string, steady = false): void {
     ttsAudio.pause();
     $("voice-note").textContent = "Generating local Thai speech with MMS on CPU. First use downloads the optional model.";
     void invoke<number[]>("synthesize_mms_thai", { text, steady }).then(bytes => {
+      selectedVoiceReady = true;
+      readiness.voiceReady = true;
+      updateConfigurationStatus();
       playSynthesized(bytes, "Playing generated local MMS Thai speech (CPU). The text stayed on this PC.");
     }).catch(error => {
+      selectedVoiceReady = false;
+      readiness.voiceReady = false;
+      updateConfigurationStatus();
       $("voice-note").textContent = "Local Thai speech failed: " + String(error);
       finishSpeech();
     });
@@ -429,27 +457,37 @@ $("previous").addEventListener("click", () => { sentenceIndex = Math.max(0, sent
 $("next").addEventListener("click", () => { sentenceIndex = Math.min(analysis.length - 1, sentenceIndex + 1); renderSentence(analysis[sentenceIndex]); });
 document.querySelectorAll<HTMLButtonElement>(".tab").forEach(button => button.addEventListener("click", () => showTab(button.dataset.tab ?? "words")));
 $("settings-toggle").addEventListener("click", () => {
+  if (initialSetupPending) { settingsOpen = true; renderViews(); return; }
   settingsOpen = !settingsOpen; renderViews();
   if (settingsOpen) { void refreshOllamaModels(); void refreshThaiAsrStatus(); $("settings-view").scrollTop = 0; }
 });
 $("finish-setup").addEventListener("click", () => {
-  localStorage.setItem(setupSeenKey, "complete");
+  reconcileInitialSetup();
+  if (initialSetupPending) {
+    $("settings-saved").textContent = "Complete the required provider and voice setup before continuing.";
+    return;
+  }
   settingsOpen = false;
   renderViews();
 });
 $("translation-provider").addEventListener("change", () => {
   settings.translationProvider = $<HTMLSelectElement>("translation-provider").value;
   settings.translationProviderConfigured = true;
-  localStorage.setItem(settingsKey, JSON.stringify(settings));
+  persistSettings(localStorage, settings);
   $<HTMLButtonElement>("save-settings").textContent = settings.translationProvider === "ollama" ? "Save and Load Model" : "Save Settings";
   updateProviderControls();
   $("provider-status").textContent = settings.translationProvider === "offline" ? "Offline examples and word lookup are local; no network is used." : settings.translationProvider === "ollama" ? "Translation is sent only to Ollama at 127.0.0.1 on this PC." : "Azure Translator F0 is the automatic provider. The app stops hosted requests at 1.9M characters per month; Ollama can serve as fallback.";
   if (azureKeyConfigured) updateAzureSetupStatus(true);
   if (settings.translationProvider === "ollama") void refreshOllamaModels();
+  reconcileInitialSetup();
   if (source.value.trim()) renderPassage();
 });
 $<HTMLSelectElement>("translation-model").addEventListener("change", event => {
   const model = (event.currentTarget as HTMLSelectElement).value;
+  if (model) settings.translationModel = model;
+  readiness.ollamaModelAvailable = Boolean(model && ollamaDiscovery?.api_models.includes(model));
+  readiness.ollamaModelLoaded = Boolean(model && ollamaDiscovery?.running_models.some(running => running.name.toLowerCase() === model.toLowerCase()));
+  persistSettings(localStorage, settings);
   $<HTMLButtonElement>("save-settings").textContent = settings.translationProvider === "ollama" ? "Save and Load Model" : "Save Settings";
   if (!model) {
     $("provider-status").textContent = "Choose a detected local Ollama model, then save to load it.";
@@ -458,6 +496,15 @@ $<HTMLSelectElement>("translation-model").addEventListener("change", event => {
   } else {
     $("provider-status").textContent = "That model was not found in the configured Ollama model store.";
   }
+  reconcileInitialSetup();
+});
+$<HTMLSelectElement>("voice-select").addEventListener("change", event => {
+  settings.voice = (event.currentTarget as HTMLSelectElement).value;
+  settings.voiceConfigured = true;
+  selectedVoiceReady = settings.voice !== MMS_VOICE;
+  readiness.voiceReady = selectedVoiceReady;
+  persistSettings(localStorage, settings);
+  reconcileInitialSetup();
 });
 $("refresh-models").addEventListener("click", () => { void refreshOllamaModels(); });
 $("test-offline").addEventListener("click", async () => {
@@ -472,8 +519,11 @@ $("test-offline").addEventListener("click", async () => {
 $("test-voice").addEventListener("click", () => speak("สวัสดีครับ วันนี้อากาศดี"));
 $("install-mms-voice").addEventListener("click", () => {
   settings.voice = MMS_VOICE;
+  settings.voiceConfigured = true;
   $<HTMLSelectElement>("voice-select").value = MMS_VOICE;
-  localStorage.setItem(settingsKey, JSON.stringify(settings));
+  persistSettings(localStorage, settings);
+  selectedVoiceReady = false;
+  readiness.voiceReady = false;
   speak("สวัสดีครับ วันนี้อากาศดี");
 });
 $("open-mic-test").addEventListener("click", () => showTab("practice"));
@@ -497,6 +547,9 @@ async function refreshOllamaModels(): Promise<void> {
   try {
     const discovery = await invoke<OllamaDiscovery>("discover_ollama");
     ollamaDiscovery = discovery;
+    readiness.ollamaServiceAvailable = discovery.service_available;
+    readiness.ollamaModelAvailable = Boolean(settings.translationModel && discovery.api_models.includes(settings.translationModel));
+    readiness.ollamaModelLoaded = Boolean(discovery.running_models.some(model => model.name.toLowerCase() === settings.translationModel.toLowerCase()));
     // Only offer models the running Ollama API confirms it can load. Disk
     // manifests alone can belong to a store the current server has not opened.
     const models = discovery.api_models;
@@ -532,10 +585,16 @@ async function refreshOllamaModels(): Promise<void> {
           ? models.length ? `Choose a model above; Save Settings asks the running Ollama service to start it and keeps it loaded.` : "No installed Ollama models. Type a model name and click Download model."
         : discovery.installed ? "Ollama is installed but not running. Open Ollama, then choose Check local Ollama." : "Ollama is not installed. Follow the install location shown above, then reopen Setup.";
     }
+    reconcileInitialSetup();
   } catch (error) {
+    ollamaDiscovery = undefined;
+    readiness.ollamaServiceAvailable = false;
+    readiness.ollamaModelAvailable = false;
+    readiness.ollamaModelLoaded = false;
     select.add(new Option("Ollama unavailable", ""));
     $("ollama-discovery-status").textContent = `Could not complete the local model check: ${String(error)}`;
     if (settings.translationProvider === "ollama") $("provider-status").textContent = "Local Ollama discovery failed. Azure remains available if selected.";
+    reconcileInitialSetup();
   }
 }
 $("test-local-translation").addEventListener("click", async () => {
@@ -616,24 +675,15 @@ $("refresh-dictionary").addEventListener("click", async () => {
 $("save-settings").addEventListener("click", async () => {
   const nextProvider = $<HTMLSelectElement>("translation-provider").value;
   const selectedModel = $<HTMLSelectElement>("translation-model").value;
-  if (nextProvider === "ollama" && !ollamaDiscovery?.service_available) {
-    $("provider-status").textContent = `PhasaForge cannot reach the existing Ollama service at ${ollamaDiscovery?.endpoint ?? "the configured OLLAMA_HOST"}. Settings were not saved.`;
-    return;
-  }
-  if (nextProvider === "ollama" && (!selectedModel || !ollamaDiscovery?.api_models.includes(selectedModel))) {
-    $("provider-status").textContent = ollamaDiscovery?.manifest_models.length
-      ? "Select one of the detected local models before saving Local Ollama."
-      : "Select a detected local Ollama model before saving Local Ollama.";
-    return;
-  }
   settings.voice = $<HTMLSelectElement>("voice-select").value;
+  settings.voiceConfigured = true;
   settings.translationProvider = nextProvider;
   settings.translationProviderConfigured = true;
   settings.translationModel = selectedModel || settings.translationModel;
   settings.hotkeyModifier = $<HTMLSelectElement>("hotkey-modifier").value;
   settings.hotkeyKey = $<HTMLSelectElement>("hotkey-key").value;
   settings.speed = Number(speed.value);
-  localStorage.setItem(settingsKey, JSON.stringify(settings));
+  persistSettings(localStorage, settings);
   renderShortcut();
   try {
     await invoke("set_hotkey", { modifier: settings.hotkeyModifier, key: settings.hotkeyKey });
@@ -642,6 +692,26 @@ $("save-settings").addEventListener("click", async () => {
     $("hotkey-status").textContent = `Preference saved; shortcut listener is unavailable: ${String(error)}`;
   }
   if (settings.translationProvider === "ollama") {
+    if (!ollamaDiscovery?.service_available) {
+      readiness.ollamaServiceAvailable = false;
+      readiness.ollamaModelAvailable = false;
+      readiness.ollamaModelLoaded = false;
+      $("settings-saved").textContent = "Saved; Ollama is not running, so local translation is not ready.";
+      $("provider-status").textContent = `Saved Local Ollama${settings.translationModel ? ` with ${settings.translationModel}` : " without a model"}. Start the existing service manually and check again; PhasaForge will not start or restart it.`;
+      reconcileInitialSetup();
+      return;
+    }
+    if (!settings.translationModel || !ollamaDiscovery.api_models.includes(settings.translationModel)) {
+      readiness.ollamaServiceAvailable = true;
+      readiness.ollamaModelAvailable = false;
+      readiness.ollamaModelLoaded = false;
+      $("settings-saved").textContent = "Saved; select an available Ollama model to finish setup.";
+      $("provider-status").textContent = settings.translationModel
+        ? `${settings.translationModel} is not listed by Ollama. Refresh the model list or select an available model.`
+        : "Selection saved. Choose an installed Ollama model to use local translation.";
+      reconcileInitialSetup();
+      return;
+    }
     const button = $<HTMLButtonElement>("save-settings");
     button.disabled = true;
     $("settings-saved").textContent = "Settings saved; starting the model…";
@@ -653,14 +723,22 @@ $("save-settings").addEventListener("click", async () => {
       const vram = loaded.size_vram ? ` · ${(loaded.size_vram / (1024 ** 3)).toFixed(1)} GiB VRAM` : "";
       $("ollama-residency-status").textContent = `Loaded and resident in Ollama: ${loaded.name}${memory}${vram}.`;
       $("provider-status").textContent = `${loaded.name} is running and will stay loaded until Ollama unloads it. Local Thai translation is ready.`;
+      readiness.ollamaServiceAvailable = true;
+      readiness.ollamaModelAvailable = true;
+      readiness.ollamaModelLoaded = true;
       $("settings-saved").textContent = "Saved; model loaded in memory.";
     } catch (error) {
       $("ollama-residency-status").textContent = `Model did not load: ${String(error)}`;
       $("provider-status").textContent = `Settings were saved, but Ollama did not confirm a running model: ${String(error)}`;
+      readiness.ollamaServiceAvailable = true;
+      readiness.ollamaModelAvailable = true;
+      readiness.ollamaModelLoaded = false;
       $("settings-saved").textContent = "Settings saved; model load failed.";
     } finally { button.disabled = false; }
+    reconcileInitialSetup();
   } else {
     $("settings-saved").textContent = "Saved on this device.";
+    reconcileInitialSetup();
     setTimeout(() => { $("settings-saved").textContent = ""; }, 2000);
   }
 });
@@ -691,10 +769,107 @@ async function ensureThaiAsrReady(): Promise<void> {
   await thaiAsrPreparation;
 }
 
-async function transcribePracticeRecording(blob: Blob): Promise<void> {
+async function blobAsBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + 0x8000, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+function historyAudioFromBase64(encoded: string, mimeType: string): Blob {
+  const binary = atob(encoded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+  return new Blob([bytes], { type: mimeType || "audio/webm" });
+}
+
+function renderHistoryControls(): void {
+  const count = practiceHistory.length;
+  $("history-position").textContent = count && practiceHistoryIndex >= 0 ? `${practiceHistoryIndex + 1}/${count}` : "0/0";
+  $("history-previous").toggleAttribute("disabled", count === 0 || practiceHistoryIndex <= 0 || transcriptionInProgress);
+  $("history-next").toggleAttribute("disabled", count === 0 || practiceHistoryIndex >= count - 1 || transcriptionInProgress);
+  $("clear-history").toggleAttribute("disabled", count === 0 || transcriptionInProgress);
+  const entry = practiceHistory[practiceHistoryIndex];
+  $("history-date").textContent = entry ? new Date(entry.recorded_at).toLocaleString() : "No saved recordings";
+}
+
+async function selectPracticeHistory(index: number): Promise<void> {
+  if (index < 0 || index >= practiceHistory.length) return;
+  const entry = practiceHistory[index];
+  practiceHistoryIndex = index;
+  selectedHistoryId = entry.id;
+  pendingRecordingBlob = undefined;
+  pendingRecordingId = undefined;
+  renderHistoryControls();
+  $("heard-text").textContent = entry.thai_text || (entry.status === "processing" ? "Transcription was still in progress when PhasaForge closed." : "No Thai speech was recognised in this recording.");
+  $("heard-translation").textContent = entry.english_text || (entry.status === "translation_failed" ? "English translation was unavailable for this recording." : "No saved English translation.");
+  $("heard-translation-status").textContent = entry.status === "complete" ? "Saved with this recording; historical results are not recalculated." : `Saved result status: ${entry.status}. Historical audio is not automatically retranscribed or retranslated.`;
+  $("practice-status").textContent = "Loaded a saved recording. Its original audio and recognition results were restored without rerunning either model.";
+  if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+  recordingUrl = undefined;
+  audio.pause();
+  try {
+    const encoded = await invoke<string>("practice_recording_audio", { id: entry.id });
+    if (selectedHistoryId !== entry.id) return;
+    const blob = historyAudioFromBase64(encoded, entry.mime_type);
+    recordingUrl = URL.createObjectURL(blob);
+    audio.src = recordingUrl;
+  } catch (error) {
+    if (selectedHistoryId === entry.id) $("practice-status").textContent = `Saved result loaded, but its audio could not be read: ${String(error)}`;
+  }
+  setRecordingControls(false, false);
+  renderHistoryControls();
+}
+
+async function loadPracticeHistory(): Promise<void> {
+  try {
+    practiceHistory = await invoke<PracticeRecording[]>("list_practice_history");
+    if (practiceHistory.length) await selectPracticeHistory(practiceHistory.length - 1);
+    else renderHistoryControls();
+  } catch (error) {
+    $("history-date").textContent = "History unavailable";
+    $("practice-status").textContent = `Local recording history could not be opened: ${String(error)}`;
+  }
+}
+
+async function saveNewPracticeRecording(blob: Blob, id: string): Promise<boolean> {
+  try {
+    practiceHistory = await invoke<PracticeRecording[]>("save_practice_recording", {
+      id,
+      recordedAt: new Date().toISOString(),
+      mimeType: blob.type || "audio/webm",
+      audioBase64: await blobAsBase64(blob),
+    });
+    practiceHistoryIndex = practiceHistory.findIndex(entry => entry.id === id);
+    selectedHistoryId = id;
+    renderHistoryControls();
+    return true;
+  } catch (error) {
+    $("practice-status").textContent = `This recording is available for this session, but local history could not save it: ${String(error)}`;
+    return false;
+  }
+}
+
+async function savePracticeResult(id: string, thaiText: string, englishText: string, status: string): Promise<void> {
+  try {
+    practiceHistory = await invoke<PracticeRecording[]>("update_practice_recording", { id, thaiText, englishText, status });
+    practiceHistoryIndex = practiceHistory.findIndex(entry => entry.id === id);
+    if (selectedHistoryId === id) renderHistoryControls();
+  } catch (error) {
+    if (selectedHistoryId === id) $("practice-status").textContent += ` History result could not be updated: ${String(error)}`;
+  }
+}
+
+async function transcribePracticeRecording(blob: Blob, historyId: string): Promise<void> {
   if (transcriptionInProgress) return;
   transcriptionInProgress = true;
   setRecordingControls(false, !audio.paused);
+  renderHistoryControls();
+  let recognizedThai = "";
+  let english = "";
+  let resultStatus = "recognition_failed";
   try {
     if (!thaiAsrReady) {
       $("practice-status").textContent = "Your recording is saved. Preparing the Thai speech recognizer now (one-time download); it will transcribe this same take when ready…";
@@ -706,35 +881,50 @@ async function transcribePracticeRecording(blob: Blob): Promise<void> {
     $("heard-translation").textContent = "Waiting for Thai recognition…";
     $("heard-translation-status").textContent = "";
     const text = await transcribeRecording(blob);
-    const recognizedThai = text.trim();
+    recognizedThai = text.trim();
     $("heard-text").textContent = recognizedThai || "No Thai speech was recognised in this recording.";
     if (recognizedThai) {
       $("practice-status").textContent = "Thai speech recognized. Translating the recognized words into English…";
-      await translatePracticeTranscript(recognizedThai);
+      english = await translatePracticeTranscript(recognizedThai);
+      resultStatus = english ? "complete" : "translation_failed";
     } else {
       $("heard-translation").textContent = "There is no recognized Thai text to translate.";
       $("practice-status").textContent = "No Thai speech was recognized in this recording.";
+      resultStatus = "no_speech";
     }
   } catch (error) {
     $("heard-text").textContent = "Your recording is still available for replay; recognition setup did not finish.";
     $("practice-status").textContent = `Thai speech recognition could not prepare or transcribe this take: ${String(error)} Open Setup to retry; the saved take will be transcribed after setup.`;
     $("asr-status").textContent = `Speech recognition setup failed: ${String(error)}`;
   } finally {
+    if (historyId) await savePracticeResult(historyId, recognizedThai, english, resultStatus);
+    if (pendingRecordingId === historyId && resultStatus !== "recognition_failed") {
+      pendingRecordingId = undefined;
+      pendingRecordingBlob = undefined;
+    }
     transcriptionInProgress = false;
     setRecordingControls(false, !audio.paused);
+    renderHistoryControls();
   }
 }
 
-async function translatePracticeTranscript(thai: string): Promise<void> {
+async function translatePracticeTranscript(thai: string): Promise<string> {
   try {
-    const result = await invoke<{ english: string; provider: string; latency_ms: number; cached: boolean }>("translate_azure", { text: thai });
+    if (settings.translationProvider === "offline") {
+      throw new Error("Offline examples do not translate new spoken text. Choose Azure F0 or Local Ollama in Setup.");
+    }
+    const result = settings.translationProvider === "ollama"
+      ? await invoke<{ english: string; provider: string; latency_ms: number; cached: boolean }>("translate_ollama_auto", { text: thai, model: settings.translationModel })
+      : await invoke<{ english: string; provider: string; latency_ms: number; cached: boolean }>("translate_auto", { text: thai, model: settings.translationModel });
     $("heard-translation").textContent = result.english;
     $("heard-translation-status").textContent = `${result.cached ? "Saved translation" : "Translated"} via ${result.provider}${result.latency_ms ? ` · ${result.latency_ms} ms` : ""}.`;
     $("practice-status").textContent = "Recognition and English translation complete. Compare both with the sentence above; this is not pronunciation or tone scoring.";
+    return result.english;
   } catch (error) {
     $("heard-translation").textContent = "English translation is unavailable.";
     $("heard-translation-status").textContent = `Translation failed: ${String(error)}`;
     $("practice-status").textContent = "Thai speech was recognized, but its English translation failed. The Thai transcript remains available above.";
+    return "";
   }
 }
 
@@ -745,7 +935,7 @@ $("prepare-thai-asr").addEventListener("click", async event => {
   try {
     await ensureThaiAsrReady();
     await refreshThaiAsrStatus();
-    if (lastRecordingBlob) void transcribePracticeRecording(lastRecordingBlob);
+    if (pendingRecordingBlob && pendingRecordingId) void transcribePracticeRecording(pendingRecordingBlob, pendingRecordingId);
   } catch (error) {
     $("asr-status").textContent = `Practice speech recognition setup failed: ${String(error)}`;
   } finally {
@@ -786,16 +976,19 @@ async function startRecording(): Promise<void> {
     $("record-again").setAttribute("disabled", "true");
     mediaRecorder = new MediaRecorder(stream);
     mediaRecorder.ondataavailable = e => { if (e.data.size) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
+    mediaRecorder.onstop = async () => {
       stream?.getTracks().forEach(t => t.stop());
       stream = undefined;
       const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || "audio/webm" });
-      lastRecordingBlob = blob;
       recordingUrl = blob.size ? URL.createObjectURL(blob) : undefined;
       if (recordingUrl) audio.src = recordingUrl;
       setRecordingControls(false, false);
       if (recordingUrl) {
-        void transcribePracticeRecording(blob);
+        const historyId = crypto.randomUUID();
+        pendingRecordingBlob = blob;
+        pendingRecordingId = historyId;
+        await saveNewPracticeRecording(blob, historyId);
+        void transcribePracticeRecording(blob, historyId);
       } else {
         $("practice-status").textContent = "No usable audio was captured. Please record again.";
         $("heard-text").textContent = "—";
@@ -844,12 +1037,40 @@ $("play-recording").addEventListener("click", () => {
     $("practice-status").textContent = "The captured audio could not be played by this Windows installation.";
   });
 });
+$("history-previous").addEventListener("click", () => { void selectPracticeHistory(practiceHistoryIndex - 1); });
+$("history-next").addEventListener("click", () => { void selectPracticeHistory(practiceHistoryIndex + 1); });
+$("clear-history").addEventListener("click", async () => {
+  if (transcriptionInProgress || !practiceHistory.length) return;
+  try {
+    await invoke("clear_practice_history");
+    practiceHistory = [];
+    practiceHistoryIndex = -1;
+    selectedHistoryId = undefined;
+    pendingRecordingBlob = undefined;
+    pendingRecordingId = undefined;
+    if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+    recordingUrl = undefined;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+    $("heard-text").textContent = "—";
+    $("heard-translation").textContent = "Translation will appear after recognition.";
+    $("heard-translation-status").textContent = "";
+    $("practice-status").textContent = "Recording history cleared from this device.";
+    renderHistoryControls();
+    setRecordingControls(false, false);
+  } catch (error) {
+    $("practice-status").textContent = `Could not clear local recording history: ${String(error)}`;
+  }
+});
 setRecordingControls(false, false);
+renderHistoryControls();
 void refreshThaiAsrStatus();
 renderViews();
 
 if ("__TAURI_INTERNALS__" in window) {
   const appWindow = getCurrentWindow();
+  void loadPracticeHistory();
   // Discover Ollama at startup and restore the saved model when Local Ollama is selected.
   void refreshOllamaModels();
   void invoke<typeof nativeThaiVoices>("list_thai_voices").then(voices => {

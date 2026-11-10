@@ -4,6 +4,7 @@ node_modules/
 dist/
 src-tauri/target/
 target-recovery/
+target-standalone/
 src-tauri/gen/
 *.log
 *.local

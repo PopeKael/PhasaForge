@@ -6,17 +6,18 @@ Prerequisites: Windows 11 x64, stable Rust MSVC toolchain, Node.js/npm, Microsof
 
 ```powershell
 npm ci
-npm run build
 npm run test:ui
 cargo test --lib --manifest-path src-tauri/Cargo.toml
-npm run tauri build -- --bundles nsis
+npm run tauri build -- --no-bundle
 ```
+
+Use the Tauri CLI command above to produce the standalone executable. It runs `beforeBuildCommand` (`npm run build`) and embeds the configured `frontendDist` (`../dist`) in the app. `devUrl` (`http://127.0.0.1:5173`) is for `tauri dev`. A raw `cargo build --release` is not the delivery command: it bypasses Tauri CLI's production build hook and can leave the frontend build/embedding step unverified. Do not copy a raw Cargo output as a release test artifact.
 
 `scripts/build_learner_db.py` verifies the retained ThaiReader SHA256 manifest and the pinned Kaikki JSONL checksum, then rebuilds `assets/learner.sqlite`. The bundled database is a share-alike data derivative; see source attribution and license files before changing or redistributing it. App code remains MIT.
 
 The 0.3.0 release files and hidden UI evidence are under `release-artifacts/0.3.0/`: `PhasaForge.exe`, `PhasaForge_0.3.0_x64-setup.exe`, checksum manifest, and UI screenshots. Local binaries are ignored by Git; the source and release instructions are committed. The installer is unsigned. The optional MMS model is downloaded separately and is not bundled.
 
-For routine development acceptance, build the frontend and release executable, then copy `src-tauri/target/release/phasaforge.exe` to a named folder such as `release-artifacts/0.4.1-recovery-test/PhasaForge.exe` and launch that file directly. Do not install the app for routine testing. NSIS/MSI packaging is a separate, secondary artifact check and does not replace delivery of the standalone executable.
+For routine development acceptance, run exactly `npm run tauri build -- --no-bundle`. Do not run raw `cargo build --release` as the delivery build: without Tauri CLI's `beforeBuildCommand`/production frontend embedding step, the resulting executable can retain the configured development URL (`http://127.0.0.1:5173`) and show `ERR_CONNECTION_REFUSED` when Vite is not running. Confirm that `src-tauri/tauri.conf.json` points `frontendDist` at `../dist`, then inspect that directory after the Tauri command has run `npm run build`. Copy the newly built `src-tauri/target/release/phasaforge.exe` to a new, versioned test-artifact directory, record its size and SHA-256, and launch that copied file directly with no Vite server running. Do not install the app for routine testing. NSIS/MSI packaging is a separate, secondary artifact check and does not replace delivery of the standalone executable.
 
 ## Installer smoke test
 

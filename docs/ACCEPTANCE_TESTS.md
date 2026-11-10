@@ -1,17 +1,18 @@
 # Acceptance record
 
-## Version 0.4.1 development — Practice transcript and Azure cross-check
+## Version 0.4.1 development — persistent configuration and recording history
 
 | Check | Result | Evidence |
 |---|---|---|
-| Stop → Thai transcript → English translation | Built; microphone acceptance requires Warren | Stop retains the take, runs local sherpa-onnx Thai Zipformer, displays recognized Thai, then requests its English cross-check directly from Azure F0 as a temporary diagnostic. The Azure UI check passed against F0, but it did not exercise a physical recording or local ASR inference. The next acceptance remains Record → Stop → Thai transcript → English translation. |
-| Provider architecture | Diagnostic exception documented | Sentence translation provider selection is persisted. Practice currently bypasses it for Azure F0; route Practice through the saved provider as a separate architectural follow-up after this recovery checkpoint. |
+| Configuration persistence | Automated checks added | Provider, model, voice, speed and hotkey are persisted in WebView local storage. Missing legacy flags are migrated from existing selections; unrecognized saved voices remain selected and are shown unavailable instead of being silently replaced. New configurations default to Meta MMS-TTS Thai. |
+| Setup visibility and readiness | Automated checks added | Initial setup is shown only until provider and voice selections have been saved. Readiness of the selected provider/model/voice is displayed without blocking normal use when a configured optional service is temporarily unavailable. Selecting MMS does not download its optional model; the existing Download + test action remains explicit. |
+| Recording history | Rust persistence/FIFO tests added | Local app-data JSON and audio files retain the last ten recordings and their timestamps, transcript, translation and status. Reopening the store restores saved results/audio metadata; the eleventh recording evicts the oldest audio file; Clear History removes all entries and audio. Selecting a historical take does not invoke recognition or translation. |
+| Stop → Thai transcript → English translation | Automated microphone-free checks pass; microphone acceptance requires Warren | The app still records and transcribes with sherpa-onnx Thai Zipformer, then uses the configured translation provider. Existing manual microphone acceptance is not repeated here. |
+| Provider architecture | Implemented | Sentence and Practice translation follow the persisted provider choice. Azure F0 remains the hosted primary; Local Ollama retains its existing Azure fallback; Offline examples do not translate new spoken sentences. |
 | Whisper.cpp proposal | Replaced | sherpa-onnx Thai Zipformer is the implemented local ASR backend and no alternative engine is introduced in this checkpoint. |
-| Actual automatic Thai TTS choice | Verified from source | Installed Windows Thai voice first, Thai WebView voice next, and MMS last; MMS remains explicitly selectable. MMS is not currently the automatic default on systems with another Thai voice. |
-| Ollama startup discovery | Built; read-only behavior restored | Startup inventory only queries and scans. It does not load a saved model, write `OLLAMA_MODELS`, or start/stop/restart the service. Manual Save Settings model loading remains available. |
-| Automated UI tests | 5 passed; headless layout test unavailable | `npm run test:ui` passed 5/5. `npm run test:ui:headless` timed out waiting for Edge's local debugging endpoint, including on retry outside the restricted shell. |
-| Azure F0 UI test | Passed | `npm run test:azure` returned all five reference translations, passed the automatic UI translation check, and confirmed cache reuse. |
-| Test NSIS installer | Built; not installed/launched | `release-artifacts/0.4.1-practice-test/PhasaForge_0.4.1_practice-test_x64-setup.exe` (9.56 MiB); SHA-256 `24925FF927B71B7BBBD00C655FCB4B59241BD038ADF5287A28B2AD316F36B7C3`. |
+| Actual default Thai TTS | Source verified | New configurations select Meta MMS-TTS Thai. Installed Windows WinRT and Thai Web Speech voices remain selectable. Optional MMS model preparation occurs only from the explicit test action. |
+| Ollama startup discovery | Read-only | Startup inventory queries and scans only. It does not load a saved model, write `OLLAMA_MODELS`, or start/stop/restart the service. Manual Save Settings model loading remains available. |
+| Automated tests | Passed | `npm run test:ui`: 9/9. `cargo test --lib --manifest-path src-tauri/Cargo.toml`: 13/13, including three new persistent-history tests. The microphone is not activated by these tests. |
 
 ## Version 0.4.0 — configured Ollama client and model loading
 

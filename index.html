@@ -76,6 +76,14 @@
 
         <section class="tab-content practice-view" id="practice-view" hidden>
           <div class="practice-actions"><button id="record" class="primary-button">● <span>Record</span></button><button id="stop-record" class="secondary-button" disabled>■ <span>Stop</span></button><button id="play-recording" class="secondary-button" disabled>▶ <span>Replay</span></button><button id="record-again" class="secondary-button" disabled>↻ <span>Record Again</span></button></div>
+          <section class="recording-history" aria-label="Recording history">
+            <strong>Recording history</strong>
+            <button id="history-previous" type="button" class="history-arrow" aria-label="Previous recording" disabled>‹</button>
+            <span id="history-position" aria-live="polite">0/0</span>
+            <button id="history-next" type="button" class="history-arrow" aria-label="Next recording" disabled>›</button>
+            <span id="history-date" class="muted">No saved recordings</span>
+            <button id="clear-history" type="button" class="secondary-button small" disabled>Clear history</button>
+          </section>
           <div id="practice-status" role="status">Microphone is idle. On first use, speech recognition prepares automatically after Stop, then transcribes that recording locally.</div>
           <div class="practice-comparison">
             <section class="practice-result"><div class="heard-label">Recognised Thai</div><div id="heard-text" class="heard-text" lang="th">—</div></section>
@@ -85,7 +93,11 @@
         </section>
 
         <section class="tab-content settings-view" id="settings-view" hidden>
-          <div class="setup-heading"><div><h2>First-time setup</h2><p class="muted">Run this again whenever you add a feature or need to repair its setup. Core reading works without optional downloads.</p></div><button id="finish-setup" class="secondary-button small">Continue to PhasaForge</button></div>
+          <div class="setup-heading"><div><h2>Setup and configuration</h2><p class="muted">Selections are saved on this device. Optional providers and speech models remain separate from one another.</p></div><button id="finish-setup" class="secondary-button small">Continue to PhasaForge</button></div>
+          <section class="setup-card" aria-labelledby="configuration-summary-title">
+            <h3 id="configuration-summary-title">Selected components and readiness</h3>
+            <pre id="configuration-summary" class="configuration-summary">Checking saved configuration…</pre>
+          </section>
           <section class="setup-card" aria-labelledby="setup-checklist-title">
             <h3 id="setup-checklist-title">What you need to do for Practice</h3>
             <p id="translation-setup-status" role="status">Checking the saved Azure Translator setting…</p>
@@ -102,7 +114,7 @@
           </div>
           <p id="ollama-discovery-status" class="muted setup-instruction" role="status">Checking this PC for Ollama and installed models…</p>
           <div id="ollama-model-controls" hidden>
-            <p class="setup-instruction">Select a model that Ollama lists on this PC, then click Save Settings. PhasaForge starts it and keeps it loaded so local translation is ready. The model uses system memory or GPU memory while loaded.</p>
+            <p class="setup-instruction">Select a model that the existing Ollama service lists, then click Save Settings to ask that service to load it. PhasaForge does not start or restart Ollama. The model uses system memory or GPU memory while loaded.</p>
             <label class="setting-row"><span class="setting-label">Installed local model <button class="help-tip" type="button" title="Select an Ollama model that is already installed on this PC." aria-label="Ollama model help">?</button></span><select id="translation-model"><option value="">Check local models…</option></select></label>
             <p id="ollama-residency-status" class="muted setup-instruction" role="status">Checking Ollama's loaded models…</p>
             <label class="setting-row"><span class="setting-label">Model name to download <button class="help-tip" type="button" title="Type the Ollama model tag you want. Nothing is preselected or downloaded for you; downloads may be several GB." aria-label="Model download help">?</button></span><input id="model-download-name" type="text" placeholder="Type a model tag, e.g. qwen3.5:4b" /></label>
@@ -120,7 +132,7 @@
           <label class="setting-row"><span class="setting-label">Paiboon+ reading <button class="help-tip" type="button" title="Optional pronunciation guide in Paiboon+ style, for example sà-wàt-dee." aria-label="Reading help">?</button></span><input id="correction-reading" type="text" placeholder="Optional; e.g. sà-wàt-dee" /></label>
           <button id="save-correction" class="secondary-button small">Save local correction</button><span id="correction-status" class="muted"></span>
           <h3>Thai playback</h3>
-          <p class="setup-instruction">The app uses an installed Windows Thai voice when one is available. Test it below; the MMS download is optional and needs Python packages and additional storage.</p>
+          <p class="setup-instruction">New configurations default to Meta MMS-TTS Thai. Installed Windows and WebView Thai voices remain available alternatives.</p>
           <label class="setting-row"><span class="setting-label">Shortcut modifier <button class="help-tip" type="button" title="Choose which Ctrl or Alt key begins the selected-text shortcut." aria-label="Shortcut modifier help">?</button></span><select id="hotkey-modifier"><option value="right_ctrl">Right Ctrl</option><option value="left_ctrl">Left Ctrl</option><option value="right_alt">Right Alt</option><option value="left_alt">Left Alt</option></select></label>
           <label class="setting-row"><span class="setting-label">Shortcut key <button class="help-tip" type="button" title="Choose the second key pressed with the modifier to open PhasaForge on selected text." aria-label="Shortcut key help">?</button></span><select id="hotkey-key"><option value="up">Up Arrow</option><option value="down">Down Arrow</option><option value="space">Space</option></select></label>
           <p class="muted" id="hotkey-status">Only the chosen shortcut is used; unrelated keys pass through. No other keyboard input is stored.</p>
