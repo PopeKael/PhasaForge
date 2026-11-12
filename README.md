@@ -1,8 +1,41 @@
 # PhasaForge
 
-PhasaForge is a compact Windows Thai study popup. Version 0.3.4 turns selected or pasted Thai into offline sentence analysis and clickable word cards within the 640×480 window, with automatic Azure Translator F0 English translation and Thai speech.
+PhasaForge is a compact Windows Thai study popup. Version 0.6.3 adds dictionary-derived syllable alignment to the offline Thai Character Inspector in the Words tab, including a cautious rule for dictionary-confirmed unwritten short vowels. Selected Text history retains its sentence analysis and translations locally, so switching between saved passages does not repeat provider requests.
 
-## What 0.3.4 does
+## What 0.4.0 adds
+
+Setup uses `OLLAMA_HOST` and lists model tags found in the configured store or returned by Ollama. Save Settings asks the existing service to load the selected model with persistent keep-alive, checks `/api/ps`, and reports resident memory/VRAM. PhasaForge never starts or stops the Ollama service. The Practice Thai/English cross-check and Azure fallback remain included.
+
+## What 0.4.1 development adds
+
+Setup persists provider, model, voice, playback speed and hotkey selections. New configurations select Meta MMS-TTS Thai; its model is downloaded only when the user explicitly tests that voice. Saved Windows or WebView voice choices remain selected and are reported unavailable if they are missing on the current device. An unready optional voice model does not block the configured app from opening.
+
+Practice keeps the ten newest microphone recordings in local app data, including their original audio, Zipformer transcript, English translation and timestamp. History selection restores the saved take and results without retranscribing or re-translating it. Clearing history also removes its audio files. Practice translation now follows the saved provider choice; Offline examples cannot translate newly spoken sentences.
+
+Ollama discovery is read-only: PhasaForge does not change the shared service's model-store setting or restart it. Loading a selected local model remains an explicit Save action.
+
+## What 0.6.3 adds
+
+- Align compound dictionary readings with unique complete Thai spelling paths so the large Words-panel inspector can explain individual syllables.
+- Explain the unwritten short /o/ in a bare closed consonant-consonant spelling only when the dictionary reading confirms its final consonant; ambiguous patterns keep the existing character-only fallback.
+
+## What 0.6.2 added
+
+- Hover a Thai consonant, vowel sign or tone mark in the large Words-panel word to see its alphabet name, romanized name and a word-context explanation. This uses an internal reference table and makes no cloud requests.
+
+## What 0.6.1 added
+
+- Optional **Start PhasaForge when I sign in to Windows** setting. It is off by default and uses the current Windows user's startup registration.
+
+## What 0.5.1 added
+
+The Selected Text box keeps the ten most recent distinct Thai passages. Sentence analysis and available translations are saved locally with each passage; moving between text-history entries restores those results without rerunning the local lookup, Ollama, or Azure translation. Selecting the same text again reuses its saved entry. Current Sentence arrows remain independent from Selected Text history. Upgrading the previous single-text setting performs local analysis only and does not make an automatic translation request.
+
+## What 0.3.7 adds
+
+Practice shows the Thai words recognized from the recording and the English translation of those same words together. When a selected local Ollama model cannot be found by the running Ollama service, PhasaForge falls back to the configured Azure Translator F0 key and reports which provider returned the translation. Sentence translations use the same fallback rule.
+
+## What 0.3.4 added
 
 Hovering a Thai sentence chunk or its romanized reading highlights the matching pair using existing word segmentation and pronunciation data. Chunks without reliable alignments remain unlinked; grouped syllables stay together within their source word. See [the 0.3.4 acceptance record](docs/ACCEPTANCE_TESTS.md#version-034--linked-syllable-highlighting).
 
@@ -12,13 +45,13 @@ Hovering a Thai sentence chunk or its romanized reading highlights the matching 
 - Supplements the existing ThaiReader SQLite data with 13,567 additional English-Wiktionary/Kaikki Thai entries, retaining source attribution and CC BY-SA licensing. It excludes Kaikki literary quotations and external audio. User corrections remain separate and survive seed upgrades.
 - Automatically translates sentences with the Microsoft Azure Translator F0 resource when configured. Successful results are cached in the local SQLite database; exact stored examples and word lookup remain immediate and offline. A 1.9 million character monthly application cap leaves headroom under F0's 2 million monthly free characters. The API key is stored in Windows Credential Manager, never in app settings, the database or logs. Azure failures use the selected Ollama model as a fallback when available. Ollama remains optional and local requests go only to `127.0.0.1:11434`.
 - On the prior test PC, `qwen3.8-27b-ud-iq3-xxs:ctx32k` preserved an unfamiliar ingredient (“olive oil”) that smaller 4B/9B models mistranslated, but uses far more memory than hosted translation. Machine translation can still be wrong.
-- Generates Thai speech locally through Meta MMS-TTS (`facebook/mms-tts-tha`) on CPU, with sentence and selected-text playback. The optional model is fetched on first use and is licensed CC BY-NC 4.0, so commercial use is not permitted under that model license. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; audio text remains local.
-- Preserves local microphone recording and replay. Thai ASR and pronunciation scoring are not included in this release.
+- Reads Thai aloud through an installed Windows Thai voice when available, then a Thai WebView voice; local Meta MMS-TTS (`facebook/mms-tts-tha`) is the last automatic fallback and can be selected explicitly. MMS runs on CPU, downloads its optional model on first use, and requires Python 3.10+ with `torch`, `transformers`, and `numpy`. Its CC BY-NC 4.0 model license is unsuitable for commercial use.
+- Preserves local microphone recording and replay. Optional local Thai ASR transcribes after recording stops; live interim transcription and pronunciation scoring are not included in this release.
 - Enforces one running instance. The default Right Ctrl + Up hotkey captures first, then opens/focuses the popup. The tray menu and window dragging remain.
 - Avoids the 0.2.0 Opera clipboard crash by never flushing a foreign OLE data object; see the [Issue #4 crash analysis and test limits](docs/ISSUE_4.md). Diagnostic logs omit selected text.
 - Resolves the focused UI Automation element's Control View ancestors when the focused leaf does not expose a text selection. Clipboard fallback remains limited to empty/text-only clipboard contents; skipped fallbacks are distinct from failed restoration, and an empty capture clears any previously shown text. See [Issue #6 capture recovery](docs/ISSUE_6.md).
 
-Offline dictionary lookup and stored examples need no network. Automatic hosted translation requires an Azure Translator F0 resource and its key, which you save under **Settings → Azure F0 key**. The app enforces the 1.9M character monthly cap and caches translations. Ollama is an optional fallback; it requires Ollama and a downloaded model. First-time local speech setup downloads the optional MMS model and requires the Python packages listed above. Neither model is bundled. No third-party lesson media is included.
+Offline dictionary lookup and stored examples need no network. Automatic hosted translation requires an Azure Translator F0 resource and its key, which you save under **Settings → Azure F0 key**. The app enforces the 1.9M character monthly cap and caches translations. Ollama is an optional fallback; it requires Ollama and a downloaded model. The optional local Thai speech recognizer is installed separately on first use and is not bundled. Neither AI model is bundled. No third-party lesson media is included.
 
 The provider latency and quality spot-check against Ollama `qwen3:0.6b` is recorded in [the translation benchmark](docs/TRANSLATION_BENCHMARK.md). On the test PC the live F0 reference calls averaged 193 ms and matched all five examples; the 0.6B local model was faster when warm but matched only one of five meanings.
 
@@ -34,12 +67,14 @@ npm run tauri dev
 Build NSIS installer and executable:
 
 ```powershell
-npm run tauri build -- --bundles nsis
+npm run tauri build -- --no-bundle
 ```
 
-Optional local translation: install [Ollama](https://ollama.com/), open **Settings → Check local Ollama**, choose an installed model or enter a model tag (download field defaults to `qwen3.5:4b`) and download it. Use **Test 5 references** to compare local output with bundled ThaiReader examples. On the test PC, the better-performing local 27B model occupies about 10.9 GB on disk; the Qwen 4B/9B alternatives used less storage but mistranslated an unfamiliar ingredient. Runtime memory depends on Ollama and available hardware.
+This Tauri CLI build runs the production frontend step and embeds the configured `../dist` frontend in the standalone app. Use the Tauri CLI build rather than raw `cargo build --release` when preparing a runnable test executable. Packaging an NSIS/MSI installer is a separate step.
 
-**Settings → Download + test local Thai voice** prepares and tests the local MMS voice. It uses CPU inference and stores the model under PhasaForge app data. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; set `PHASAFORGE_PYTHON` if Python is not on PATH. Alternatively, Settings can use an installed Windows/WebView Thai voice. English substitution is disabled.
+Optional local translation: install [Ollama for Windows](https://ollama.com/download/windows). PhasaForge checks for Ollama and installed models at startup, including its configured model directory; it does not start the service or load a model during discovery. Choose Local Ollama to select a model already installed, or type a model tag to download one. The model-name field is blank by default. Use **Test 5 references** to compare local output with bundled ThaiReader examples. On the test PC, the better-performing local 27B model occupies about 10.9 GB on disk; the Qwen 4B/9B alternatives used less storage but mistranslated an unfamiliar ingredient. Runtime memory depends on Ollama and available hardware.
+
+**Settings → Download + test local Thai voice** prepares and tests the local MMS voice. It uses CPU inference and stores the model under PhasaForge app data. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; set `PHASAFORGE_PYTHON` if Python is not on PATH. Windows and WebView Thai voices are retained as alternatives. English substitution is disabled.
 
 ## Data and licensing
 

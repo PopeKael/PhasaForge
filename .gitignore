@@ -3,6 +3,8 @@ node_modules/
 .cache-tts/
 dist/
 src-tauri/target/
+target-recovery/
+target-standalone/
 src-tauri/gen/
 *.log
 *.local

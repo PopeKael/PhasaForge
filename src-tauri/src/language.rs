@@ -1,7 +1,14 @@
 use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
-use std::{path::PathBuf, sync::Mutex, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Mutex,
+    time::Duration,
+};
 use tauri::{AppHandle, State};
 
 const SEED_DB: &[u8] = include_bytes!("../../assets/learner.sqlite");
@@ -9,6 +16,7 @@ const SEED_VERSION: i64 = 44;
 
 pub struct LanguageState {
     db: Mutex<Connection>,
+    syllable_spellings: Mutex<SyllableSpellingIndex>,
     path: PathBuf,
     tokenizer: kham_core::Tokenizer,
     translation_lock: tokio::sync::Mutex<()>,
@@ -31,6 +39,18 @@ pub struct WordCard {
 pub struct Syllable {
     pub reading: String,
     pub tone: &'static str,
+    pub spelling: Option<String>,
+}
+
+type SyllableSpellingIndex = HashMap<String, Vec<String>>;
+
+#[derive(Debug, PartialEq, Eq)]
+enum SyllableAlignment {
+    Aligned(Vec<String>),
+    Ambiguous,
+    MissingReadingCandidate,
+    NoCompleteSpellingPath,
+    InvalidInput,
 }
 
 #[derive(Serialize)]
@@ -78,8 +98,10 @@ pub fn open(app: &AppHandle) -> Result<LanguageState, String> {
     let tokenizer = kham_core::Tokenizer::builder()
         .dict_merge(&word_list)
         .build();
+    let syllable_spellings = build_syllable_spelling_index(&db)?;
     Ok(LanguageState {
         db: Mutex::new(db),
+        syllable_spellings: Mutex::new(syllable_spellings),
         path,
         tokenizer,
         translation_lock: tokio::sync::Mutex::new(()),
@@ -128,6 +150,11 @@ pub fn refresh_dictionary(state: State<'_, LanguageState>) -> Result<String, Str
         return Ok(format!("Local learner data is already current (v{SEED_VERSION}); your corrections were preserved."));
     }
     import_seed(&mut db, &state.path)?;
+    let syllable_spellings = build_syllable_spelling_index(&db)?;
+    *state
+        .syllable_spellings
+        .lock()
+        .map_err(|_| "The local syllable dictionary is busy".to_string())? = syllable_spellings;
     Ok(format!(
         "Updated learner data to v{SEED_VERSION}; your corrections were preserved."
     ))
@@ -142,13 +169,18 @@ pub fn analyze_text(
         .db
         .lock()
         .map_err(|_| "The local dictionary is busy".to_string())?;
-    analyze_with_db(&text, &db, &state.tokenizer)
+    let syllable_spellings = state
+        .syllable_spellings
+        .lock()
+        .map_err(|_| "The local syllable dictionary is busy".to_string())?;
+    analyze_with_db(&text, &db, &state.tokenizer, &syllable_spellings)
 }
 
 fn analyze_with_db(
     text: &str,
     db: &Connection,
     tokenizer: &kham_core::Tokenizer,
+    syllable_spellings: &SyllableSpellingIndex,
 ) -> Result<Vec<SentenceCard>, String> {
     let segmenter = kham_core::sentence::SentenceSegmenter::new();
     let mut cards = Vec::new();
@@ -163,7 +195,7 @@ fn analyze_with_db(
             .iter()
             .filter(|t| t.kind == kham_core::TokenKind::Thai)
         {
-            words.extend(resolve_token(&db, token.text)?);
+            words.extend(resolve_token(db, syllable_spellings, token.text)?);
         }
         let reading = words
             .iter()
@@ -194,8 +226,12 @@ fn analyze_with_db(
     Ok(cards)
 }
 
-fn resolve_token(db: &Connection, token: &str) -> Result<Vec<WordCard>, String> {
-    let direct = lookup_word(db, token)?;
+fn resolve_token(
+    db: &Connection,
+    syllable_spellings: &SyllableSpellingIndex,
+    token: &str,
+) -> Result<Vec<WordCard>, String> {
+    let direct = lookup_word(db, syllable_spellings, token)?;
     if direct.meaning.is_some() {
         return Ok(vec![direct]);
     }
@@ -206,7 +242,7 @@ fn resolve_token(db: &Connection, token: &str) -> Result<Vec<WordCard>, String> 
         let mut matched: Option<(usize, WordCard)> = None;
         for end in (start + 1..=chars.len().min(start + 16)).rev() {
             let part: String = chars[start..end].iter().collect();
-            let card = lookup_word(db, &part)?;
+            let card = lookup_word(db, syllable_spellings, &part)?;
             if card.meaning.is_some() {
                 matched = Some((end, card));
                 break;
@@ -217,14 +253,18 @@ fn resolve_token(db: &Connection, token: &str) -> Result<Vec<WordCard>, String> 
             start = end;
         } else {
             let part = chars[start].to_string();
-            output.push(lookup_word(db, &part)?);
+            output.push(lookup_word(db, syllable_spellings, &part)?);
             start += 1;
         }
     }
     Ok(output)
 }
 
-fn lookup_word(db: &Connection, word: &str) -> Result<WordCard, String> {
+fn lookup_word(
+    db: &Connection,
+    syllable_spellings: &SyllableSpellingIndex,
+    word: &str,
+) -> Result<WordCard, String> {
     let example: Option<(String, String)> = db
         .query_row(
             "SELECT thai,english FROM examples WHERE word_id=?1 ORDER BY pick DESC LIMIT 1",
@@ -251,6 +291,7 @@ fn lookup_word(db: &Connection, word: &str) -> Result<WordCard, String> {
             Some("user-provided".into()),
             None,
             example,
+            syllable_spellings,
         ));
     }
     let entry: Option<(String, Option<String>, String, String)> = db
@@ -294,9 +335,118 @@ fn lookup_word(db: &Connection, word: &str) -> Result<WordCard, String> {
             Some(confidence),
             exact_tones,
             example,
+            syllable_spellings,
         ));
     }
-    Ok(card(word, None, None, None, None, None, None, example))
+    Ok(card(
+        word,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        example,
+        syllable_spellings,
+    ))
+}
+
+fn build_syllable_spelling_index(db: &Connection) -> Result<SyllableSpellingIndex, String> {
+    let mut statement = db
+        .prepare(
+            "SELECT word, reading FROM words WHERE reading IS NOT NULL AND trim(reading) != ''",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut index: SyllableSpellingIndex = HashMap::new();
+    for row in rows {
+        let (word, reading) = row.map_err(|e| e.to_string())?;
+        // In this dataset, hyphens delimit the syllables of a compound reading.
+        // A single uninterrupted romanised reading is the dictionary's evidence
+        // that the spelling can serve as one syllable in the alignment index.
+        if reading.contains('-')
+            || reading.split_whitespace().count() != 1
+            || !is_thai_orthographic_word(&word)
+        {
+            continue;
+        }
+        index.entry(reading).or_default().push(word);
+    }
+    for spellings in index.values_mut() {
+        spellings.sort();
+        spellings.dedup();
+    }
+    Ok(index)
+}
+
+fn is_thai_orthographic_word(word: &str) -> bool {
+    !word.is_empty()
+        && word
+            .chars()
+            .all(|character| ('\u{0E00}'..='\u{0E7F}').contains(&character))
+        && word
+            .chars()
+            .any(|character| ('\u{0E01}'..='\u{0E2E}').contains(&character))
+}
+
+fn align_syllable_spellings(
+    word: &str,
+    readings: &[String],
+    index: &SyllableSpellingIndex,
+) -> SyllableAlignment {
+    if !is_thai_orthographic_word(word)
+        || readings.is_empty()
+        || readings.iter().any(String::is_empty)
+    {
+        return SyllableAlignment::InvalidInput;
+    }
+    if readings.iter().any(|reading| !index.contains_key(reading)) {
+        return SyllableAlignment::MissingReadingCandidate;
+    }
+
+    fn search(
+        remaining: &str,
+        readings: &[String],
+        index: &SyllableSpellingIndex,
+        path: &mut Vec<String>,
+        complete_paths: &mut Vec<Vec<String>>,
+    ) {
+        if complete_paths.len() > 1 {
+            return;
+        }
+        if readings.is_empty() {
+            if remaining.is_empty() {
+                complete_paths.push(path.clone());
+            }
+            return;
+        }
+        let Some(candidates) = index.get(&readings[0]) else {
+            return;
+        };
+        for candidate in candidates {
+            let Some(rest) = remaining.strip_prefix(candidate) else {
+                continue;
+            };
+            path.push(candidate.clone());
+            search(rest, &readings[1..], index, path, complete_paths);
+            path.pop();
+            if complete_paths.len() > 1 {
+                return;
+            }
+        }
+    }
+
+    let mut complete_paths = Vec::with_capacity(2);
+    search(word, readings, index, &mut Vec::new(), &mut complete_paths);
+    match complete_paths.len() {
+        0 => SyllableAlignment::NoCompleteSpellingPath,
+        1 => SyllableAlignment::Aligned(complete_paths.pop().unwrap()),
+        _ => SyllableAlignment::Ambiguous,
+    }
 }
 
 fn card(
@@ -308,16 +458,33 @@ fn card(
     confidence: Option<String>,
     exact_tones: Option<String>,
     example: Option<(String, String)>,
+    syllable_spellings: &SyllableSpellingIndex,
 ) -> WordCard {
     let tone_names: Vec<&str> = exact_tones.as_deref().unwrap_or("").split('-').collect();
-    let syllables = reading
-        .as_deref()
-        .unwrap_or("")
+    let raw_reading = reading.as_deref().unwrap_or("");
+    let has_complete_reading =
+        !raw_reading.is_empty() && raw_reading.split('-').all(|syllable| !syllable.is_empty());
+    let syllable_readings: Vec<String> = raw_reading
         .split('-')
         .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let spelling_alignment = if has_complete_reading {
+        match align_syllable_spellings(word, &syllable_readings, syllable_spellings) {
+            SyllableAlignment::Aligned(spellings) => Some(spellings),
+            SyllableAlignment::Ambiguous
+            | SyllableAlignment::MissingReadingCandidate
+            | SyllableAlignment::NoCompleteSpellingPath
+            | SyllableAlignment::InvalidInput => None,
+        }
+    } else {
+        None
+    };
+    let syllables = syllable_readings
+        .iter()
         .enumerate()
         .map(|(i, s)| Syllable {
-            reading: s.to_string(),
+            reading: s.clone(),
             tone: match tone_names.get(i).copied() {
                 Some("mid") => "mid",
                 Some("low") => "low",
@@ -326,6 +493,9 @@ fn card(
                 Some("rising") => "rising",
                 _ => tone(s),
             },
+            spelling: spelling_alignment
+                .as_ref()
+                .and_then(|spellings| spellings.get(i).cloned()),
         })
         .collect();
     WordCard {
@@ -398,9 +568,20 @@ pub fn database_location(state: State<'_, LanguageState>) -> String {
 
 fn local_client() -> Result<Client, String> {
     Client::builder()
+        .no_proxy()
         .timeout(Duration::from_secs(900))
         .build()
         .map_err(|e| e.to_string())
+}
+
+fn ollama_base_url() -> String {
+    let configured = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "127.0.0.1:11434".into());
+    let configured = configured.trim().trim_end_matches('/');
+    if configured.contains("://") { configured.to_string() } else { format!("http://{configured}") }
+}
+
+fn ollama_url(path: &str) -> String {
+    format!("{}{path}", ollama_base_url())
 }
 
 #[cfg(target_os = "windows")]
@@ -521,6 +702,30 @@ pub async fn translate_auto(text: String, model: String, state: State<'_, Langua
 }
 
 #[tauri::command]
+pub async fn translate_ollama_auto(text: String, model: String, state: State<'_, LanguageState>) -> Result<TranslationResult, String> {
+    let local_start = std::time::Instant::now();
+    let local_result = if model.trim().is_empty() {
+        Err("No Ollama model is selected.".to_string())
+    } else {
+        translate_local(text.clone(), model.clone()).await
+    };
+    match local_result {
+        Ok(english) => Ok(TranslationResult {
+            english,
+            provider: format!("Ollama ({model})"),
+            latency_ms: local_start.elapsed().as_millis(),
+            cached: false,
+        }),
+        Err(local_error) => {
+            let mut result = translate_azure(text, state).await
+                .map_err(|azure_error| format!("{local_error} Azure F0 fallback also failed: {azure_error}"))?;
+            result.provider = format!("{} · Ollama fallback failed: {local_error}", result.provider);
+            Ok(result)
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn test_azure_translation(state: State<'_, LanguageState>) -> Result<Vec<TranslationCheck>, String> {
     let cases = [("ผมรู้สึกไม่สบาย", "I feel unwell."), ("นี่ของคุณใช่ไหม", "Is this yours?"), ("ไปเลย ไม่ต้องรอ", "Go ahead, no need to wait."), ("เด็กวิ่งข้ามถนน", "The child ran across the street."), ("ซื้อสองแถมหนึ่ง", "Buy two, get one free.")];
     let mut output = Vec::new();
@@ -533,7 +738,8 @@ pub async fn test_azure_translation(state: State<'_, LanguageState>) -> Result<V
 
 #[tauri::command]
 pub async fn ollama_models() -> Result<Vec<String>, String> {
-    let response = local_client()?.get("http://127.0.0.1:11434/api/tags").send().await.map_err(|_| "Ollama is not responding on this PC (127.0.0.1:11434). Install/start it to use local translation.".to_string())?;
+    let endpoint = ollama_base_url();
+    let response = local_client()?.get(ollama_url("/api/tags")).send().await.map_err(|_| format!("Ollama is not responding at {endpoint}."))?;
     if !response.status().is_success() {
         return Err(format!("Ollama returned HTTP {}", response.status()));
     }
@@ -544,6 +750,180 @@ pub async fn ollama_models() -> Result<Vec<String>, String> {
         .flatten()
         .filter_map(|m| m["name"].as_str().map(str::to_string))
         .collect())
+}
+
+#[derive(Serialize)]
+pub struct OllamaDiscovery {
+    pub installed: bool,
+    pub executable: Option<String>,
+    pub service_available: bool,
+    pub model_store_found: bool,
+    pub model_directory: String,
+    pub endpoint: String,
+    pub models: Vec<String>,
+    pub api_models: Vec<String>,
+    pub manifest_models: Vec<String>,
+    pub running_models: Vec<OllamaRunningModel>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct OllamaRunningModel {
+    pub name: String,
+    pub size: u64,
+    pub size_vram: u64,
+}
+
+async fn query_ollama_running_models() -> Vec<OllamaRunningModel> {
+    let Ok(client) = Client::builder().no_proxy().connect_timeout(Duration::from_millis(500)).timeout(Duration::from_secs(3)).build() else { return Vec::new(); };
+    let Ok(response) = client.get(ollama_url("/api/ps")).send().await else { return Vec::new(); };
+    let Ok(value) = response.json::<serde_json::Value>().await else { return Vec::new(); };
+    value["models"].as_array().into_iter().flatten().filter_map(|model| {
+        let name = model["name"].as_str().or_else(|| model["model"].as_str())?.to_string();
+        Some(OllamaRunningModel {
+            name,
+            size: model["size"].as_u64().unwrap_or(0),
+            size_vram: model["size_vram"].as_u64().unwrap_or(0),
+        })
+    }).collect()
+}
+
+fn find_ollama_executable() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let where_output = Command::new("where.exe").arg("ollama.exe").output().ok();
+    #[cfg(not(target_os = "windows"))]
+    let where_output = Command::new("which").arg("ollama").output().ok();
+    if let Some(output) = where_output.filter(|output| output.status.success()) {
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let candidate = PathBuf::from(line.trim());
+            if candidate.is_file() { return Some(candidate); }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates = Vec::new();
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            candidates.push(PathBuf::from(local_app_data).join("Programs/Ollama/ollama.exe"));
+        }
+        if let Some(program_files) = std::env::var_os("ProgramFiles") {
+            candidates.push(PathBuf::from(program_files).join("Ollama/ollama.exe"));
+        }
+        if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+            candidates.push(PathBuf::from(program_files_x86).join("Ollama/ollama.exe"));
+        }
+        return candidates.into_iter().find(|candidate| candidate.is_file());
+    }
+    #[cfg(not(target_os = "windows"))]
+    None
+}
+
+fn ollama_model_directory() -> PathBuf {
+    if let Some(configured) = std::env::var_os("OLLAMA_MODELS").filter(|value| !value.is_empty()) {
+        return PathBuf::from(configured);
+    }
+    #[cfg(target_os = "windows")]
+    let home = std::env::var_os("USERPROFILE").map(PathBuf::from);
+    #[cfg(not(target_os = "windows"))]
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    home.unwrap_or_else(|| PathBuf::from(".")).join(".ollama/models")
+}
+
+fn collect_ollama_manifests(current: &Path, root: &Path, models: &mut Vec<String>, visited: &mut usize, depth: usize) {
+    if *visited >= 20_000 || depth >= 16 { return; }
+    let Ok(entries) = fs::read_dir(current) else { return; };
+    for entry in entries.flatten() {
+        *visited += 1;
+        let Ok(kind) = entry.file_type() else { continue; };
+        if kind.is_symlink() { continue; }
+        if kind.is_dir() {
+            collect_ollama_manifests(&entry.path(), root, models, visited, depth + 1);
+        } else if kind.is_file() {
+            let Ok(relative) = entry.path().strip_prefix(root).map(Path::to_path_buf) else { continue; };
+            let mut parts: Vec<String> = relative.components().map(|part| part.as_os_str().to_string_lossy().into_owned()).collect();
+            if parts.len() < 3 { continue; }
+            parts.remove(0); // Registry name, normally registry.ollama.ai
+            if parts.first().is_some_and(|part| part == "library") { parts.remove(0); }
+            let Some(tag) = parts.pop() else { continue; };
+            if parts.is_empty() { continue; }
+            let name = format!("{}:{tag}", parts.join("/"));
+            if !models.contains(&name) { models.push(name); }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn discover_ollama() -> OllamaDiscovery {
+    let executable = find_ollama_executable();
+    let endpoint = ollama_base_url();
+    let model_directory = ollama_model_directory();
+    let (service_available, api_models) = match Client::builder().no_proxy().connect_timeout(Duration::from_millis(500)).timeout(Duration::from_secs(2)).build() {
+        Ok(client) => match client.get(ollama_url("/api/tags")).send().await {
+            Ok(response) if response.status().is_success() => (true, response.json::<serde_json::Value>().await.ok()),
+            _ => (false, None),
+        },
+        Err(_) => (false, None),
+    };
+    let api_models: Vec<String> = api_models.map(|value| {
+        value["models"].as_array().into_iter().flatten().filter_map(|model| model["name"].as_str().map(str::to_string)).collect()
+    }).unwrap_or_default();
+    let manifests = model_directory.join("manifests");
+    let manifests_v2 = model_directory.join("manifests-v2");
+    let mut manifest_models = Vec::new();
+    let mut visited = 0;
+    collect_ollama_manifests(&manifests, &manifests, &mut manifest_models, &mut visited, 0);
+    collect_ollama_manifests(&manifests_v2, &manifests_v2, &mut manifest_models, &mut visited, 0);
+    let mut api_models = api_models;
+    api_models.sort();
+    let mut models = api_models.clone();
+    for model in &manifest_models {
+        if !models.contains(model) { models.push(model.clone()); }
+    }
+    models.sort();
+    manifest_models.sort();
+    let installed = executable.is_some() || service_available;
+    let model_store_found = model_directory.exists() || !manifest_models.is_empty();
+    let running_models = if service_available { query_ollama_running_models().await } else { Vec::new() };
+    OllamaDiscovery {
+        installed,
+        executable: executable.map(|path| path.display().to_string()),
+        service_available,
+        model_store_found,
+        model_directory: model_directory.display().to_string(),
+        endpoint,
+        models,
+        api_models,
+        manifest_models,
+        running_models,
+    }
+}
+
+#[tauri::command]
+pub async fn load_ollama_model(model: String) -> Result<OllamaRunningModel, String> {
+    let model = model.trim();
+    if model.is_empty() || model.len() > 120 || !model.chars().all(|c| c.is_ascii_alphanumeric() || ":._/-".contains(c)) {
+        return Err("Select a detected local Ollama model.".into());
+    }
+    let endpoint = ollama_base_url();
+    let client = local_client()?;
+    let response = client.post(ollama_url("/api/generate"))
+        .json(&serde_json::json!({"model":model,"prompt":"","stream":false,"keep_alive":-1}))
+        .send().await.map_err(|error| format!("Could not start Ollama model '{model}': {error}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("The Ollama service at {endpoint} did not recognize '{model}' (HTTP 404)."));
+    }
+    if !response.status().is_success() {
+        return Err(format!("Ollama at {endpoint} could not start '{model}' (HTTP {}).", response.status()));
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(running) = query_ollama_running_models().await.into_iter().find(|entry| entry.name.eq_ignore_ascii_case(model)) {
+            return Ok(running);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!("Ollama accepted the load request for '{model}', but /api/ps did not confirm that it is running. Refresh the local Ollama status before relying on it."));
+        }
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
 }
 
 #[tauri::command]
@@ -558,7 +938,7 @@ pub async fn pull_ollama_model(model: String) -> Result<(), String> {
         return Err("Enter a valid Ollama model name such as qwen3:1.7b.".into());
     }
     let response = local_client()?
-        .post("http://127.0.0.1:11434/api/pull")
+        .post(ollama_url("/api/pull"))
         .json(&serde_json::json!({"name":model,"stream":false}))
         .send()
         .await
@@ -577,9 +957,16 @@ pub async fn translate_local(text: String, model: String) -> Result<String, Stri
     if text.trim().is_empty() || text.chars().count() > 5000 {
         return Err("Enter Thai text under 5,000 characters.".into());
     }
-    let response = local_client()?.post("http://127.0.0.1:11434/api/generate")
-        .json(&serde_json::json!({"model":model,"stream":false,"think":false,"keep_alive":"30s","options":{"temperature":0.1,"num_predict":256},"prompt":format!("/no_think\nTranslate this Thai text into natural English. Return only the English translation. Preserve names, politeness and intent. Do not explain or add facts.\nThai: {}\nEnglish:",text)}))
+    if model.trim().is_empty() {
+        return Err("No Ollama model is selected.".into());
+    }
+    let endpoint = ollama_base_url();
+    let response = local_client()?.post(ollama_url("/api/generate"))
+        .json(&serde_json::json!({"model":model,"stream":false,"think":false,"keep_alive":-1,"options":{"temperature":0.1,"num_predict":256},"prompt":format!("/no_think\nTranslate this Thai text into natural English. Return only the English translation. Preserve names, politeness and intent. Do not explain or add facts.\nThai: {}\nEnglish:",text)}))
         .send().await.map_err(|e| format!("Local translation request failed: {e}"))?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err(format!("Ollama at {endpoint} could not find the selected model '{model}' (HTTP 404)."));
+    }
     if !response.status().is_success() {
         return Err(format!(
             "Ollama translation returned HTTP {}",
@@ -640,6 +1027,166 @@ mod tests {
         assert_eq!(tone("khǎo"), "rising");
         assert_eq!(tone("dee"), "mid");
     }
+
+    #[test]
+    fn dictionary_index_aligns_known_and_unseen_compounds_only_when_unique() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let index = build_syllable_spelling_index(&db).unwrap();
+
+        let cases: [(&str, &[&str], &[&str]); 12] = [
+            ("กินข้าว", &["gin", "kâao"], &["กิน", "ข้าว"]),
+            ("ทุกคน", &["túk", "kon"], &["ทุก", "คน"]),
+            // This phrase has no compound row in the bundled dictionary; both
+            // readings still align through its independently listed syllables.
+            ("บ้านเรา", &["bâan", "rao"], &["บ้าน", "เรา"]),
+            ("ทำงาน", &["tam", "ngaan"], &["ทำ", "งาน"]),
+            ("ขอบคุณ", &["kɔ̀ɔp", "kun"], &["ขอบ", "คุณ"]),
+            ("โรงเรียน", &["roong", "riian"], &["โรง", "เรียน"]),
+            ("รถไฟ", &["rót", "fai"], &["รถ", "ไฟ"]),
+            ("อาชีพ", &["aa", "chîip"], &["อา", "ชีพ"]),
+            ("ที่นี่", &["tîi", "nîi"], &["ที่", "นี่"]),
+            ("ชี้ที่นี่", &["chíi", "tîi", "nîi"], &["ชี้", "ที่", "นี่"]),
+            ("ลูกนก", &["lûuk", "nók"], &["ลูก", "นก"]),
+            ("นกบิน", &["nók", "bin"], &["นก", "บิน"]),
+        ];
+        for (word, readings, expected) in cases {
+            let readings = readings
+                .iter()
+                .map(|reading| reading.to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                align_syllable_spellings(word, &readings, &index),
+                SyllableAlignment::Aligned(
+                    expected
+                        .iter()
+                        .map(|spelling| spelling.to_string())
+                        .collect()
+                ),
+                "alignment for {word}"
+            );
+        }
+
+        // The inspector payload uses dictionary entries directly, not a
+        // separately maintained list of compound word boundaries.
+        for (word, reading) in [
+            ("กินข้าว", "gin-kâao"),
+            ("ทุกคน", "túk-kon"),
+            ("อาชีพ", "aa-chîip"),
+            ("ที่นี่", "tîi-nîi"),
+            ("ชี้", "chíi"),
+        ] {
+            let card = lookup_word(&db, &index, word).unwrap();
+            assert_eq!(card.reading.as_deref(), Some(reading));
+            assert!(card
+                .syllables
+                .iter()
+                .all(|syllable| syllable.spelling.is_some()));
+        }
+    }
+
+    #[test]
+    fn dictionary_alignment_coverage_and_failure_counts_are_measured() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let index = build_syllable_spelling_index(&db).unwrap();
+        let indexed_spellings = index.values().map(Vec::len).sum::<usize>();
+        let indexed_readings = index.len();
+        let mut statement = db
+            .prepare("SELECT word, reading FROM words WHERE reading LIKE '%-%'")
+            .unwrap();
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap();
+        let (mut eligible, mut aligned, mut ambiguous) = (0, 0, 0);
+        let (mut missing_reading, mut no_complete_path, mut invalid) = (0, 0, 0);
+        for row in rows {
+            let (word, reading) = row.unwrap();
+            if !is_thai_orthographic_word(&word) {
+                continue;
+            }
+            let readings = reading.split('-').map(str::to_string).collect::<Vec<_>>();
+            if readings.len() < 2 || readings.iter().any(String::is_empty) {
+                continue;
+            }
+            eligible += 1;
+            match align_syllable_spellings(&word, &readings, &index) {
+                SyllableAlignment::Aligned(_) => aligned += 1,
+                SyllableAlignment::Ambiguous => ambiguous += 1,
+                SyllableAlignment::MissingReadingCandidate => missing_reading += 1,
+                SyllableAlignment::NoCompleteSpellingPath => no_complete_path += 1,
+                SyllableAlignment::InvalidInput => invalid += 1,
+            }
+        }
+        assert!(
+            eligible > 1_000,
+            "expected a substantial compound dictionary"
+        );
+        assert_eq!(eligible, 14_590, "compound coverage denominator changed");
+        assert!(aligned > 0);
+        assert_eq!(aligned + ambiguous + missing_reading + no_complete_path + invalid, eligible);
+        eprintln!(
+            "Dictionary syllable index: {indexed_spellings} spellings across {indexed_readings} readings. Compound spelling alignment: {aligned}/{eligible} ({:.1}%) complete unique; {ambiguous} ambiguous, {missing_reading} missing one or more reading candidates, {no_complete_path} candidate sets with no complete spelling path, {invalid} invalid inputs.",
+            aligned as f64 * 100.0 / eligible as f64
+        );
+    }
+
+    #[test]
+    fn ambiguous_or_partial_paths_keep_the_safe_fallback() {
+        let index = HashMap::from([
+            ("a".to_string(), vec!["ก".to_string(), "กา".to_string()]),
+            ("b".to_string(), vec!["ข".to_string(), "าข".to_string()]),
+        ]);
+        assert_eq!(
+            align_syllable_spellings("กาข", &["a".into(), "b".into()], &index),
+            SyllableAlignment::Ambiguous
+        );
+        assert_eq!(
+            align_syllable_spellings("ข", &["missing".into()], &index),
+            SyllableAlignment::MissingReadingCandidate
+        );
+        assert_eq!(
+            align_syllable_spellings("ข", &["a".into()], &index),
+            SyllableAlignment::NoCompleteSpellingPath
+        );
+        assert_eq!(
+            align_syllable_spellings("ข", &[], &index),
+            SyllableAlignment::InvalidInput
+        );
+    }
+
+    #[test]
+    fn shared_word_card_fixture_matches_the_bundled_dictionary_and_index() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let index = build_syllable_spelling_index(&db).unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!("../../tests/fixtures/syllable-inspector.json")).unwrap();
+
+        for card_fixture in fixture["dictionaryCards"].as_array().unwrap() {
+            let word = card_fixture["word"].as_str().unwrap();
+            let actual = lookup_word(&db, &index, word).unwrap();
+            assert_eq!(
+                serde_json::to_value(&actual.syllables).unwrap(),
+                card_fixture["syllables"],
+                "production WordCard payload for {word}"
+            );
+        }
+
+        for compound in fixture["unseenCompounds"].as_array().unwrap() {
+            let word = compound["word"].as_str().unwrap();
+            let syllables = compound["syllables"].as_array().unwrap();
+            let readings = syllables.iter().map(|item| item["reading"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+            let spellings = syllables.iter().map(|item| item["spelling"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+            assert_eq!(
+                align_syllable_spellings(word, &readings, &index),
+                SyllableAlignment::Aligned(spellings),
+                "dictionary-derived unseen compound {word}"
+            );
+        }
+    }
+
     #[test]
     fn source_database_has_real_learner_content() {
         let path =
@@ -673,6 +1220,26 @@ mod tests {
         assert!(senses >= 26_000);
         assert_eq!(tone_count, 1_142);
         assert_eq!(authentic_tone, "falling");
+        let inspector_examples = [
+            ("อาชีพ", "aa-chîip", None),
+            ("ที่นี่", "tîi-nîi", Some("falling-falling")),
+            ("บ้าน", "bâan", Some("falling")),
+            ("กิน", "gin", None),
+            ("ชี้", "chíi", Some("high")),
+            ("ที่", "tîi", Some("falling")),
+            ("นี่", "nîi", Some("falling")),
+        ];
+        for (word, expected_reading, expected_tones) in inspector_examples {
+            let (reading, exact_tones): (String, Option<String>) = db
+                .query_row(
+                    "SELECT w.reading,p.tones FROM words w LEFT JOIN pronunciation_tones p ON p.word=w.word AND p.reading=w.reading WHERE w.word=?1",
+                    [word],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(reading, expected_reading, "dictionary reading for {word}");
+            assert_eq!(exact_tones.as_deref(), expected_tones, "dictionary tones for {word}");
+        }
         let evidence: String = db
             .query_row(
                 "SELECT confidence FROM words WHERE word='เดิน'",
@@ -725,13 +1292,15 @@ mod tests {
         let tokenizer = kham_core::Tokenizer::builder()
             .dict_merge(&word_list)
             .build();
-        let card = lookup_word(&db, "เดิน").unwrap();
+        let syllable_spellings = build_syllable_spelling_index(&db).unwrap();
+        let card = lookup_word(&db, &syllable_spellings, "เดิน").unwrap();
         assert_eq!(card.reading.as_deref(), Some("dəən"));
         assert_eq!(card.meaning.as_deref(), Some("to stroll"));
         let sentence = analyze_with_db(
             "เราเดินดูของหลายอย่าง ทั้งผัก ผลไม้ และอาหารพื้นบ้าน",
             &db,
             &tokenizer,
+            &syllable_spellings,
         )
         .unwrap();
         assert_eq!(sentence.len(), 1);

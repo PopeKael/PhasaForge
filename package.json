@@ -1,12 +1,12 @@
 {
   "name": "phasaforge",
   "private": true,
-  "version": "0.3.4",
+  "version": "0.6.3",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "test:ui": "node --test tests/*.test.mjs",
+    "test:ui": "node --test --test-concurrency=1 tests/*.test.mjs",
     "test:ui:headless": "node tests/headless-ui.mjs",
     "test:ui:tauri": "node tests/tauri-ui.mjs",
     "test:azure": "node tests/azure-ui.mjs",
@@ -14,7 +14,8 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.8.0"
+    "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-autostart": "^2.7.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",

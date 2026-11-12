@@ -1,5 +1,113 @@
 # Acceptance record
 
+## Version 0.6.3 development — dictionary-derived syllable alignment
+
+| Check | Result | Evidence |
+|---|---|---|
+| Dictionary alignment coverage | Measured | The bundled dictionary index contains 3,712 Thai spellings across 3,262 readings. Of 14,590 compound entries, 7,107 (48.7%) have one complete, unique spelling alignment; 0 are ambiguous, 4,917 lack one or more reading candidates, 2,566 have candidates but no complete spelling path, and 0 inputs are invalid. Unsupported entries retain the character-level fallback. |
+| Implicit short /o/ | Passed | A bare closed consonant-consonant spelling is explained as an unwritten short /o/ only when the dictionary reading confirms the coda. Automated cases include คน, นก, รถ, ขน, จบ, สด, กบ, ค้น and ผล. The longer-vowel spelling พร remains on the safe fallback. |
+| UI and TypeScript tests | Passed | `npm run test:ui`: 29/29, including the shared production syllable processor, hit-area checks for above/below vowels and tone marks, and unseen dictionary compounds ลูกนก and นกบิน. The release build also ran `tsc --noEmit` and Vite production compilation. |
+| Rust tests | Passed | `cargo test --locked --offline --lib --manifest-path src-tauri/Cargo.toml -- --nocapture`: 17/17. The first sandboxed attempt could not write temporary audio files in the existing recording-history tests; rerunning the unchanged suite with test-temp-file access passed all tests. Alignment acceptance examples are checked against the same bundled `WordCard` payload used by the UI. |
+| Live standalone UI | Passed | Launched the staged `PhasaForge.exe` directly while port 5173 had 0 listeners. The app showed v0.6.3 at `tauri.localhost`. Hovering `กินข้าว` showed `กิน` (`gin`, mid) and `ข้าว` (`kâao`, falling); hovering `ทุกคน` showed `ทุก` (`túk`, high) and `คน` (`kon`, mid). The latter explains ค as low-class initial kh, an unwritten short /o/, and น as a live nasal final. All four compact tooltips remained within the 640×480 window. Both passages were restored from saved text history; the UI reported that no new lookup or translation request was made. No microphone was used. |
+| Standalone executable | Verified | Built with `npm run tauri build -- --no-bundle`; `src-tauri/tauri.conf.json` embeds `../dist`. The staged copy was the one launched without Vite. Artifact: `release-artifacts/0.6.3-syllable-alignment-verified/PhasaForge.exe` · 42,278,912 bytes · SHA-256 `23A8B5F7AA9D538378A3A959CBDDE0FE7828771FD8F49E9E3519D7662ED6B662`. No installer was built. |
+
+## Version 0.6.2 development — Thai Character Inspector
+
+| Check | Result | Evidence |
+|---|---|---|
+| Offline character reference | Passed | 44 consonants, common vowel signs, tone marks and other common Thai marks have deterministic Thai names and romanized names. Context descriptions distinguish alphabet names from onset/coda sound and avoid inferring tone from a mark alone. |
+| Character hover and Thai shaping | Passed | Edge browser geometry test verifies the visible `ี` region in `อาชีพ` resolves to index 3 (`ี`) while the visible `ช` region resolves to index 2 (`ช`). It also verifies below-vowel and tone-mark hit areas and tooltip dismissal. The visible word remains one text node. |
+| Syllable and tone analysis | Passed | UI regressions cover `อาชีพ` → `อา + ชีพ`, `ที่นี่` → `ที่ + นี่` (so น is the onset of นี่), `บ้าน` (live nasal coda), `กิน` (short vowel plus live nasal), and `ชี้ที่นี่`. Dictionary readings/tones drive the pronunciation; supported Thai spelling boundaries and tone-rule factors are explained. Unknown multisyllabic boundaries or unsupported clusters retain the verified character-only fallback. |
+| UI tests | Passed | `npm run test:ui`: 26/26, including Edge verification of visible above-vowel/consonant separation, full syllable details, below vowel, tone mark and tooltip dismissal. |
+| Rust tests | Passed | `cargo test --lib --manifest-path src-tauri/Cargo.toml --locked`: 13/13. The bundled learner database test now checks readings/tone entries for the requested examples. |
+| Standalone executable | Passed | `npm run tauri build -- --no-bundle`; copied executable launched directly with no Vite server. Live `อาชีพ` hover displayed `ชีพ · chîip · falling tone`, per-character breakdown and the unmarked low-class + long-vowel + stop-coda tone rule, within the fixed app window. Artifact: `release-artifacts/0.6.2-syllable-inspector-verified/PhasaForge.exe` · 42,322,432 bytes · SHA-256 `ED44EF410F5FB450F4477E719B999CE7C81BF9AC51B6FF862C29AB64A88ED3BA`. No installer was built. |
+| External Azure acceptance script | Not run | `npm run test:azure` sends test text to Azure F0. It was not run because the inspector is offline and the script can generate billable translation requests. |
+
+# Version 0.6.1 development — Windows sign-in startup option
+
+| Check | Result | Evidence |
+|---|---|---|
+| Startup preference logic | Passed | UI tests verify default-off and persistence. Focused unit tests verify unchanged state makes no OS registration call, changed state selects enable/disable, and failures are not reported as success. |
+| Tauri startup integration | Passed | The standalone app queried the Tauri plugin successfully and showed the actual state as disabled in Setup. The checkbox remained unchecked; no Windows startup registration was changed during verification. |
+| Standalone executable | Passed | `npm run tauri build -- --no-bundle` embedded `../dist`; direct launch of the copied executable opened the `tauri.localhost` PhasaForge interface with no Vite listener on port 5173. Artifact: `release-artifacts/0.6.1-autostart-verified/PhasaForge.exe` · 42,318,336 bytes · SHA-256 `91917B870B59715FA6F78757C07BEC0BCE41ED0713B9BE63EFDA47101DDBAC91`. |
+| Secondary bundles | Passed | Full `npm run tauri build` produced NSIS `PhasaForge_0.6.1_x64-setup.exe` · 10,072,203 bytes · SHA-256 `344CBB2061CEC8DD07F3A12FE6B175C149F75C010C716894CEF1AB0142619F16` and MSI `PhasaForge_0.6.1_x64_en-US.msi` · 15,007,744 bytes · SHA-256 `4036D3D13427943BFCC5F61934886FFA71D02750EB1CF54D00B1E443D999A51F`. Neither installer was run. |
+
+## Version 0.5.1 development — selected-text history
+
+| Check | Result | Evidence |
+|---|---|---|
+| Selected-text history | Automated tests added | Retains the ten newest distinct source texts and cached sentence cards locally. Identical text reuses its saved entry. Previous/Next restores the saved analysis and translations; it does not call the analyzer or translation providers. |
+| Persistence and FIFO | Automated tests added | Tests reopen saved text history with sentence readings/translations intact and verify ten-entry FIFO retention plus bounded navigation. |
+| Existing Current Sentence navigation | Preserved in source | Sentence arrows continue to index within the active selected-text entry; the new text-history arrows have separate controls and state. |
+| Hosted translation billing | Automated path inspection | New text requests eligible translations once. Restoring history and changing the selected translation provider do not automatically retranslate saved passages. Explicit Retry translation remains available. |
+| Upgrade from the previous single-text setting | Automated test passed | Existing selected text is migrated through local analysis without an automatic hosted translation request. |
+| UI/configuration tests | Passed | `npm run test:ui`: 15/15, including persistence, duplicate-text reuse, FIFO navigation, the migration billing guard and a guard that history restoration does not call analysis or provider commands. |
+| Rust tests | Passed | `cargo test --lib --manifest-path src-tauri/Cargo.toml --locked`: 13/13. |
+| Standalone executable | Built and launched | `npm run tauri build -- --no-bundle` embedded the production frontend. Direct launch opened the v0.5.1 interface at `tauri.localhost`; no microphone was used. Artifact: `release-artifacts/0.5.1-selected-text-history-verified/PhasaForge.exe` · 42,160,640 bytes · SHA-256 `1390F99E7F5E65C426981CC5CB0AB4AD9828FF5E82126530BC31B7EC88346431`. |
+| Microphone | Not used | This revision does not change recording history or activate the microphone. |
+
+## Version 0.4.1 development — persistent configuration and recording history
+
+| Check | Result | Evidence |
+|---|---|---|
+| Configuration persistence | Automated checks added | Provider, model, voice, speed and hotkey are persisted in WebView local storage. Missing legacy flags are migrated from existing selections; unrecognized saved voices remain selected and are shown unavailable instead of being silently replaced. New configurations default to Meta MMS-TTS Thai. |
+| Setup visibility and readiness | Automated checks added | Initial setup is shown only until provider and voice selections have been saved. Readiness of the selected provider/model/voice is displayed without blocking normal use when a configured optional service is temporarily unavailable. Selecting MMS does not download its optional model; the existing Download + test action remains explicit. |
+| Recording history | Rust persistence/FIFO tests added | Local app-data JSON and audio files retain the last ten recordings and their timestamps, transcript, translation and status. Reopening the store restores saved results/audio metadata; the eleventh recording evicts the oldest audio file; Clear History removes all entries and audio. Selecting a historical take does not invoke recognition or translation. |
+| Stop → Thai transcript → English translation | Automated microphone-free checks pass; microphone acceptance requires Warren | The app still records and transcribes with sherpa-onnx Thai Zipformer, then uses the configured translation provider. Existing manual microphone acceptance is not repeated here. |
+| Provider architecture | Implemented | Sentence and Practice translation follow the persisted provider choice. Azure F0 remains the hosted primary; Local Ollama retains its existing Azure fallback; Offline examples do not translate new spoken sentences. |
+| Whisper.cpp proposal | Replaced | sherpa-onnx Thai Zipformer is the implemented local ASR backend and no alternative engine is introduced in this checkpoint. |
+| Actual default Thai TTS | Source verified | New configurations select Meta MMS-TTS Thai. Installed Windows WinRT and Thai Web Speech voices remain selectable. Optional MMS model preparation occurs only from the explicit test action. |
+| Ollama startup discovery | Read-only | Startup inventory queries and scans only. It does not load a saved model, write `OLLAMA_MODELS`, or start/stop/restart the service. Manual Save Settings model loading remains available. |
+| Automated tests | Passed | `npm run test:ui`: 9/9. `cargo test --lib --manifest-path src-tauri/Cargo.toml`: 13/13, including three new persistent-history tests. The microphone is not activated by these tests. |
+
+## Version 0.4.0 — configured Ollama client and model loading
+
+| Check | Result | Evidence |
+|---|---|---|
+| Existing-service connection | Built | Ollama requests use `OLLAMA_HOST` and bypass HTTP proxies. PhasaForge does not start, stop, or reconfigure the external service. TypeScript and Rust production builds passed. |
+| Model selection and preload | Built; live model load pending | The selector combines live API tags with model-store manifests and displays ordinary model names. Saving requests `keep_alive=-1` from the existing service, checks `/api/ps`, and shows resident/VRAM size. |
+| Live machine check | Pending | At the last read-only API probe, `/api/tags` and `/api/ps` returned empty while model manifests existed under `F:\AI\Models\Ollama`; no Ollama process was started or stopped during this release. |
+| NSIS installer | Built | `release-artifacts/0.4.0/PhasaForge_0.4.0_x64-setup.exe` (9.56 MiB); SHA-256 `38C43AA3C3573421E7D29F9502A3F88D09989BA344ADB6207AB9E8A6EA48E558`. App was not installed/launched, so an actual model load remains unverified. |
+
+## Version 0.3.9 — selected model loading and residency
+
+| Check | Result | Evidence |
+|---|---|---|
+| Load on save and app startup | Built | Save calls Ollama's empty-prompt preload with `keep_alive=-1`, verifies the chosen model through `/api/ps`, and reports its resident/VRAM size. A saved local model is restored on app startup. Frontend and Rust production builds passed. |
+| Installed model selection | Built; live load pending | The dropdown uses the running Ollama service's `/api/tags` list only. Current local service returns zero models despite model manifests in `F:\AI\Models\Ollama`; Setup explains that Ollama must load that store before PhasaForge can start a selected model. |
+| NSIS installer | Built | `release-artifacts/0.3.9/PhasaForge_0.3.9_x64-setup.exe` (9.57 MiB); SHA-256 `8FC4752FC86788427A212D1A7B37853D4DE3BDA410DC08638DB35CFFEB455413`. App was not installed or launched, so model loading was not live-smoke-tested. |
+
+## Version 0.3.8 — Ollama model inventory
+
+| Check | Result | Evidence |
+|---|---|---|
+| Automatic model-store repair | Removed in the 0.4.1 development branch | Discovery must not restart or reconfigure the shared Ollama service. Manual Ollama controls remain available. |
+| NSIS installer | Built | `release-artifacts/0.3.8/PhasaForge_0.3.8_x64-setup.exe` (9.55 MiB); SHA-256 `4C0375B709C09549A697A8F6F3DAEACED4CDEC74F4EC5F56A7E9F3A31779D501`. App was not installed/launched, so selector appearance was not live-smoke-tested. |
+
+## Version 0.3.7 — translated speech practice and Ollama fallback
+
+| Check | Result | Evidence |
+|---|---|---|
+| Practice English cross-check | Built | Practice now displays recognized Thai with its English translation, plus provider/status information, and uses larger text for both. Frontend TypeScript check and production build passed. |
+| Missing Ollama model recovery | Built | The active Ollama API reported zero models while a prior model tag remained selected. Only models returned by the active service are selectable; stale manifest files are identified separately. Ollama errors fall back to configured Azure F0 in both Practice and Meaning. |
+| NSIS installer | Built | `release-artifacts/0.3.7/PhasaForge_0.3.7_x64-setup.exe` (9.56 MiB); SHA-256 `63513BDAAB528F1EDFF3E70985C6E83C0E1B54231AAA80470B5BB1DFB6DA7A0D`. The app was not installed or launched by this build step. |
+
+## Version 0.3.6 — Thai recognition setup repair
+
+| Check | Result | Evidence |
+|---|---|---|
+| ASR setup dependency correction | Passed, live recovery on installed 0.3.5 | Found the venv and all model files were present but `numpy` was missing. Installed NumPy 1.26.4 into the app's isolated ASR environment; setup then retried the existing in-memory recording and sherpa-onnx returned `สวัสดีครับ`. |
+| Fresh setup includes NumPy | Passed, production installer built | Preparation now installs both `sherpa-onnx==2.0.1` and `numpy==1.26.4`, then checks for both packages and model files before marking setup complete. NSIS installer: `release-artifacts/0.3.6/PhasaForge_0.3.6_x64-setup.exe` (9.55 MiB; SHA-256 `6E23D30622E4331131E4719108A998D4A2E950422D31AB559C05EB974B39F7F6`); fresh-install smoke testing remains pending. |
+
+## Version 0.3.5 — local Thai speech recognition baseline
+
+| Check | Result | Evidence |
+|---|---|---|
+| Local ASR setup and transcription path | Implemented; live verification pending | Settings prepares an isolated Python environment, downloads sherpa-onnx and the int8 Thai Zipformer model into app data, and reports readiness. Practice resamples the in-memory recording and transcribes it locally after Stop; the temporary WAV is removed after the attempt. |
+| Streaming and pronunciation scoring | Not included | The selected published sherpa Thai model is offline, so no interim transcript appears while speaking. Transcription text is not a pronunciation or tone score. |
+| NSIS installer build | Passed, not install-smoke-tested | `release-artifacts/0.3.5/PhasaForge_0.3.5_x64-setup.exe` was produced successfully (9.53 MiB); the app was not installed or launched by this build step. |
+| Microphone, recognition quality, CPU/RAM | Pending | Must be checked with the user's actual microphone and speech before calling the baseline accepted. |
+
 ## Version 0.3.4 — linked syllable highlighting
 
 | Check | Result | Evidence |
