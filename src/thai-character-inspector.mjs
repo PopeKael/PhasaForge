@@ -136,28 +136,32 @@ export function describeThaiCharacter(word, characterIndex) {
   return Object.freeze({ character, kind: reference.kind, name: reference.name, romanization: reference.romanization, explanation });
 }
 
-// These spellings are unambiguously segmented and checked against the bundled
-// ThaiReader/Paiboon+ syllable readings. Other multisyllabic words remain on
-// the character-only path until a reliable Thai spelling alignment is known.
-const verifiedSyllableSpellings = Object.freeze({
-  "อาชีพ": Object.freeze(["อา", "ชีพ"]),
-  "ที่นี่": Object.freeze(["ที่", "นี่"]),
-  "ชี้ที่นี่": Object.freeze(["ชี้", "ที่", "นี่"]),
-});
-
 const shortVowelSigns = new Set(["ะ", "ั", "ิ", "ึ", "ุ", "็"]);
 const longVowelSigns = new Set(["า", "ี", "ื", "ู", "เ", "แ", "โ", "ใ", "ไ"]);
 const stopCodas = new Set(["p", "t", "k"]);
 const nasalCodas = new Set(["m", "n", "ng"]);
 
 function syllableSpellings(word, dictionarySyllables) {
-  const verified = verifiedSyllableSpellings[word];
-  if (verified && verified.length === dictionarySyllables.length && verified.join("") === word) return verified;
-  if (dictionarySyllables.length === 1) return [word];
-  return null;
+  if (!Array.isArray(dictionarySyllables) || dictionarySyllables.length === 0) return null;
+  const spellings = dictionarySyllables.map(syllable => syllable?.spelling);
+  if (spellings.some(spelling => typeof spelling !== "string" || spelling.length === 0)) return null;
+  if (spellings.length !== dictionarySyllables.length || spellings.join("") !== word) return null;
+  return spellings;
 }
 
-function inspectSyllableSpelling(spelling) {
+function dictionaryConfirmsImplicitShortO(reading, finalSound) {
+  if (typeof reading !== "string" || reading.length === 0) return null;
+  const normalized = reading.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  if (!/^\p{L}+$/u.test(normalized)) return null;
+  const romanizedFinal = normalized.endsWith("ng") ? "ng" : normalized.at(-1);
+  if (romanizedFinal !== finalSound) return false;
+  const codaLength = romanizedFinal.length;
+  const syllableBody = normalized.slice(0, -codaLength);
+  const writtenRomanizedVowels = Array.from(syllableBody).filter(character => "aeiou".includes(character));
+  return syllableBody.endsWith("o") && writtenRomanizedVowels.length === 1;
+}
+
+function inspectSyllableSpelling(spelling, dictionaryReading) {
   const characters = Array.from(spelling);
   const consonantIndices = characters.flatMap((character, index) => consonantSet.has(character) ? [index] : []);
   const vowelIndices = characters.flatMap((character, index) => vowelSet.has(character) ? [index] : []);
@@ -167,14 +171,29 @@ function inspectSyllableSpelling(spelling) {
   if (!firstConsonant) return null;
   const lastConsonantIndex = consonantIndices.at(-1);
   const hasInternalVowel = vowelIndices.some(index => index > firstConsonantIndex && index < lastConsonantIndex);
+  const finalCharacter = consonantIndices.length === 2 ? characters[lastConsonantIndex] : null;
+  const finalSound = finalCharacter ? THAI_CHARACTER_REFERENCE[finalCharacter]?.final : null;
+  const toneMarkCount = characters.filter(character => toneMarks.has(character)).length;
+  const toneMarkOnsetPosition = markIndex < 0 || markIndex > firstConsonantIndex && markIndex < lastConsonantIndex;
+  const supportedCoda = stopCodas.has(finalSound) || nasalCodas.has(finalSound);
+  const hasBareClosedSpelling = characters.length === 2 + toneMarkCount
+    && consonantIndices.length === 2
+    && vowelIndices.length === 0
+    && toneMarkCount <= 1
+    && toneMarkOnsetPosition
+    && characters.every(character => consonantSet.has(character) || toneMarks.has(character))
+    && firstConsonant !== "อ"
+    && finalCharacter !== "ร"
+    && supportedCoda
+    && dictionaryConfirmsImplicitShortO(dictionaryReading, finalSound);
+  const implicitVowel = hasBareClosedSpelling ? "o" : null;
 
   // Multiple adjacent consonants can be a cluster, leading consonant, silent
-  // letter or coda. This small inspector does not pick among those by guess.
-  if (consonantIndices.length > 2 || (consonantIndices.length === 2 && !hasInternalVowel)) return null;
+  // letter or coda. The unwritten-vowel case accepted here is a bare C+C
+  // closed syllable whose one-syllable reading confirms a short o and its coda.
+  if (consonantIndices.length > 2 || (consonantIndices.length === 2 && !hasInternalVowel && !hasBareClosedSpelling)) return null;
 
   const finalIndex = consonantIndices.length === 2 ? lastConsonantIndex : -1;
-  const finalCharacter = finalIndex >= 0 ? characters[finalIndex] : null;
-  const finalSound = finalCharacter ? THAI_CHARACTER_REFERENCE[finalCharacter]?.final : null;
   const toneMark = markIndex >= 0 ? characters[markIndex] : null;
   if (characters.filter(character => toneMarks.has(character)).length > 1) return null;
 
@@ -183,7 +202,9 @@ function inspectSyllableSpelling(spelling) {
     ? "short"
     : presentVowels.length && presentVowels.every(character => longVowelSigns.has(character))
       ? "long"
-      : null;
+      : implicitVowel
+        ? "short"
+        : null;
   const consonantClass = THAI_CHARACTER_REFERENCE[firstConsonant]?.consonantClass ?? null;
   const codaType = finalSound && stopCodas.has(finalSound)
     ? "dead stop"
@@ -227,7 +248,7 @@ function inspectSyllableSpelling(spelling) {
     }
   }
 
-  return Object.freeze({ characters, consonantIndices, vowelIndices, firstConsonantIndex, firstConsonant, lastConsonantIndex, finalIndex, finalCharacter, finalSound, toneMark, vowelLength, consonantClass, codaType, ruleTone, rule });
+  return Object.freeze({ characters, consonantIndices, vowelIndices, firstConsonantIndex, firstConsonant, lastConsonantIndex, finalIndex, finalCharacter, finalSound, toneMark, vowelLength, implicitVowel, consonantClass, codaType, ruleTone, rule });
 }
 
 function describeSyllableCharacter(spelling, characterIndex, analysis) {
@@ -271,7 +292,7 @@ export function describeThaiSyllable(word, characterIndex, dictionarySyllables =
     const end = start + Array.from(spelling).length;
     if (characterIndex >= start && characterIndex < end) {
       const dictionary = dictionarySyllables[syllableIndex];
-      const analysis = inspectSyllableSpelling(spelling);
+      const analysis = inspectSyllableSpelling(spelling, dictionary?.reading);
       // Keep the existing character description if this syllable uses an
       // unsupported cluster or spelling; never fabricate a boundary or sound.
       if (!analysis || !dictionary?.reading || !dictionary?.tone) return null;
@@ -281,7 +302,9 @@ export function describeThaiSyllable(word, characterIndex, dictionarySyllables =
       const onsetText = analysis.firstConsonant === "อ"
         ? "vowel carrier"
         : `${THAI_CHARACTER_REFERENCE[analysis.firstConsonant]?.initial ?? "consonant"} onset`;
-      const vowelText = analysis.vowelIndices.map(index => THAI_CHARACTER_REFERENCE[analysis.characters[index]]?.romanization).filter(Boolean).join(" + ") || "vowel pattern";
+      const vowelText = analysis.implicitVowel
+        ? `unwritten short /${analysis.implicitVowel}/ vowel`
+        : analysis.vowelIndices.map(index => THAI_CHARACTER_REFERENCE[analysis.characters[index]]?.romanization).filter(Boolean).join(" + ") || "vowel pattern";
       const finalText = analysis.finalCharacter ? ` + final /${analysis.finalSound}/` : " + open ending";
       const combined = `${onsetText} + ${vowelText}${finalText}`;
       const toneFactors = `${analysis.consonantClass ?? "unknown-class"}-class initial, ${analysis.vowelLength ?? "unknown-length"} vowel, ${analysis.codaType ?? "unresolved"} ending, ${analysis.toneMark ? `written ${THAI_CHARACTER_REFERENCE[analysis.toneMark]?.name}` : "no written tone mark"}`;
@@ -301,6 +324,7 @@ export function describeThaiSyllable(word, characterIndex, dictionarySyllables =
         toneRule,
         consonantClass: analysis.consonantClass,
         vowelLength: analysis.vowelLength,
+        implicitVowel: analysis.implicitVowel,
         initial: analysis.firstConsonant ? `${THAI_CHARACTER_REFERENCE[analysis.firstConsonant].initial}` : null,
         final: analysis.finalCharacter ? { character: analysis.finalCharacter, sound: analysis.finalSound, type: analysis.codaType } : null,
         writtenToneMark: analysis.toneMark,

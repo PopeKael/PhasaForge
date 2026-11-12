@@ -26,6 +26,7 @@ export type ThaiSyllableInfo = Readonly<{
   toneRule: string;
   consonantClass: string | null;
   vowelLength: string | null;
+  implicitVowel: string | null;
   initial: string | null;
   final: Readonly<{ character: string; sound: string; type: string | null }> | null;
   writtenToneMark: string | null;
@@ -33,12 +34,12 @@ export type ThaiSyllableInfo = Readonly<{
 
 export const THAI_CHARACTER_REFERENCE: Readonly<Record<string, Readonly<Record<string, string>>>>;
 export function describeThaiCharacter(word: string, characterIndex: number): ThaiCharacterInfo | null;
-export function describeThaiSyllable(word: string, characterIndex: number, dictionarySyllables?: readonly Readonly<{ reading: string; tone: string }>[]): ThaiSyllableInfo | null;
+export function describeThaiSyllable(word: string, characterIndex: number, dictionarySyllables?: readonly Readonly<{ reading: string; tone: string; spelling: string | null }>[]): ThaiSyllableInfo | null;
 export function createThaiCharacterHitAreas(
   word: string,
   label: HTMLElement,
   overlay: HTMLElement,
   onEnter: (target: HTMLButtonElement, info: ThaiCharacterInfo | null) => void,
   onLeave: () => void,
-  dictionarySyllables?: readonly Readonly<{ reading: string; tone: string }>[],
+  dictionarySyllables?: readonly Readonly<{ reading: string; tone: string; spelling: string | null }>[],
 ): HTMLButtonElement[];

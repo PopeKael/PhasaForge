@@ -1,0 +1,26 @@
+{
+  "dictionaryCards": [
+    { "word": "กินข้าว", "syllables": [{ "reading": "gin", "tone": "mid", "spelling": "กิน" }, { "reading": "kâao", "tone": "falling", "spelling": "ข้าว" }] },
+    { "word": "ทุกคน", "syllables": [{ "reading": "túk", "tone": "high", "spelling": "ทุก" }, { "reading": "kon", "tone": "mid", "spelling": "คน" }] },
+    { "word": "อาชีพ", "syllables": [{ "reading": "aa", "tone": "mid", "spelling": "อา" }, { "reading": "chîip", "tone": "falling", "spelling": "ชีพ" }] },
+    { "word": "ที่นี่", "syllables": [{ "reading": "tîi", "tone": "falling", "spelling": "ที่" }, { "reading": "nîi", "tone": "falling", "spelling": "นี่" }] },
+    { "word": "ชี้", "syllables": [{ "reading": "chíi", "tone": "high", "spelling": "ชี้" }] },
+    { "word": "บ้าน", "syllables": [{ "reading": "bâan", "tone": "falling", "spelling": "บ้าน" }] },
+    { "word": "กิน", "syllables": [{ "reading": "gin", "tone": "mid", "spelling": "กิน" }] },
+    { "word": "คน", "syllables": [{ "reading": "kon", "tone": "mid", "spelling": "คน" }] },
+    { "word": "นก", "syllables": [{ "reading": "nók", "tone": "high", "spelling": "นก" }] },
+    { "word": "รถ", "syllables": [{ "reading": "rót", "tone": "high", "spelling": "รถ" }] },
+    { "word": "ขน", "syllables": [{ "reading": "kǒn", "tone": "rising", "spelling": "ขน" }] },
+    { "word": "จบ", "syllables": [{ "reading": "jòp", "tone": "low", "spelling": "จบ" }] },
+    { "word": "สด", "syllables": [{ "reading": "sòt", "tone": "low", "spelling": "สด" }] },
+    { "word": "กบ", "syllables": [{ "reading": "gòp", "tone": "low", "spelling": "กบ" }] },
+    { "word": "ค้น", "syllables": [{ "reading": "kón", "tone": "high", "spelling": "ค้น" }] },
+    { "word": "ผล", "syllables": [{ "reading": "pǒn", "tone": "rising", "spelling": "ผล" }] },
+    { "word": "พร", "syllables": [{ "reading": "pɔɔn", "tone": "mid", "spelling": "พร" }] },
+    { "word": "รถไฟ", "syllables": [{ "reading": "rót", "tone": "high", "spelling": "รถ" }, { "reading": "fai", "tone": "mid", "spelling": "ไฟ" }] }
+  ],
+  "unseenCompounds": [
+    { "word": "ลูกนก", "syllables": [{ "reading": "lûuk", "tone": "falling", "spelling": "ลูก" }, { "reading": "nók", "tone": "high", "spelling": "นก" }] },
+    { "word": "นกบิน", "syllables": [{ "reading": "nók", "tone": "high", "spelling": "นก" }, { "reading": "bin", "tone": "mid", "spelling": "บิน" }] }
+  ]
+}

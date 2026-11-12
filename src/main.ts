@@ -67,7 +67,7 @@ type OllamaRunningModel = { name: string; size: number; size_vram: number };
 type OllamaDiscovery = { installed: boolean; executable: string | null; service_available: boolean; model_store_found: boolean; model_directory: string; endpoint: string; models: string[]; api_models: string[]; manifest_models: string[]; running_models: OllamaRunningModel[] };
 type PracticeRecording = { id: string; recorded_at: string; mime_type: string; thai_text: string; english_text: string; status: string };
 type SelectedTextHistoryEntry<T> = { id: string; recorded_at: string; text: string; analysis: T[]; status: "processing" | "processed" | "analysis_failed" };
-type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
+type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string; spelling: string | null }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
 type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
 
 function renderSentencePronunciation(card: SentenceCard | undefined): void {

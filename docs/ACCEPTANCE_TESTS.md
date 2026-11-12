@@ -1,5 +1,16 @@
 # Acceptance record
 
+## Version 0.6.3 development — dictionary-derived syllable alignment
+
+| Check | Result | Evidence |
+|---|---|---|
+| Dictionary alignment coverage | Measured | The bundled dictionary index contains 3,712 Thai spellings across 3,262 readings. Of 14,590 compound entries, 7,107 (48.7%) have one complete, unique spelling alignment; 0 are ambiguous, 4,917 lack one or more reading candidates, 2,566 have candidates but no complete spelling path, and 0 inputs are invalid. Unsupported entries retain the character-level fallback. |
+| Implicit short /o/ | Passed | A bare closed consonant-consonant spelling is explained as an unwritten short /o/ only when the dictionary reading confirms the coda. Automated cases include คน, นก, รถ, ขน, จบ, สด, กบ, ค้น and ผล. The longer-vowel spelling พร remains on the safe fallback. |
+| UI and TypeScript tests | Passed | `npm run test:ui`: 29/29, including the shared production syllable processor, hit-area checks for above/below vowels and tone marks, and unseen dictionary compounds ลูกนก and นกบิน. The release build also ran `tsc --noEmit` and Vite production compilation. |
+| Rust tests | Passed | `cargo test --locked --offline --lib --manifest-path src-tauri/Cargo.toml -- --nocapture`: 17/17. The first sandboxed attempt could not write temporary audio files in the existing recording-history tests; rerunning the unchanged suite with test-temp-file access passed all tests. Alignment acceptance examples are checked against the same bundled `WordCard` payload used by the UI. |
+| Live standalone UI | Passed | Launched the staged `PhasaForge.exe` directly while port 5173 had 0 listeners. The app showed v0.6.3 at `tauri.localhost`. Hovering `กินข้าว` showed `กิน` (`gin`, mid) and `ข้าว` (`kâao`, falling); hovering `ทุกคน` showed `ทุก` (`túk`, high) and `คน` (`kon`, mid). The latter explains ค as low-class initial kh, an unwritten short /o/, and น as a live nasal final. All four compact tooltips remained within the 640×480 window. Both passages were restored from saved text history; the UI reported that no new lookup or translation request was made. No microphone was used. |
+| Standalone executable | Verified | Built with `npm run tauri build -- --no-bundle`; `src-tauri/tauri.conf.json` embeds `../dist`. The staged copy was the one launched without Vite. Artifact: `release-artifacts/0.6.3-syllable-alignment-verified/PhasaForge.exe` · 42,278,912 bytes · SHA-256 `23A8B5F7AA9D538378A3A959CBDDE0FE7828771FD8F49E9E3519D7662ED6B662`. No installer was built. |
+
 ## Version 0.6.2 development — Thai Character Inspector
 
 | Check | Result | Evidence |

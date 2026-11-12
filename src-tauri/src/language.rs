@@ -1,7 +1,14 @@
 use reqwest::Client;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
-use std::{fs, path::{Path, PathBuf}, process::Command, sync::Mutex, time::Duration};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Mutex,
+    time::Duration,
+};
 use tauri::{AppHandle, State};
 
 const SEED_DB: &[u8] = include_bytes!("../../assets/learner.sqlite");
@@ -9,6 +16,7 @@ const SEED_VERSION: i64 = 44;
 
 pub struct LanguageState {
     db: Mutex<Connection>,
+    syllable_spellings: Mutex<SyllableSpellingIndex>,
     path: PathBuf,
     tokenizer: kham_core::Tokenizer,
     translation_lock: tokio::sync::Mutex<()>,
@@ -31,6 +39,18 @@ pub struct WordCard {
 pub struct Syllable {
     pub reading: String,
     pub tone: &'static str,
+    pub spelling: Option<String>,
+}
+
+type SyllableSpellingIndex = HashMap<String, Vec<String>>;
+
+#[derive(Debug, PartialEq, Eq)]
+enum SyllableAlignment {
+    Aligned(Vec<String>),
+    Ambiguous,
+    MissingReadingCandidate,
+    NoCompleteSpellingPath,
+    InvalidInput,
 }
 
 #[derive(Serialize)]
@@ -78,8 +98,10 @@ pub fn open(app: &AppHandle) -> Result<LanguageState, String> {
     let tokenizer = kham_core::Tokenizer::builder()
         .dict_merge(&word_list)
         .build();
+    let syllable_spellings = build_syllable_spelling_index(&db)?;
     Ok(LanguageState {
         db: Mutex::new(db),
+        syllable_spellings: Mutex::new(syllable_spellings),
         path,
         tokenizer,
         translation_lock: tokio::sync::Mutex::new(()),
@@ -128,6 +150,11 @@ pub fn refresh_dictionary(state: State<'_, LanguageState>) -> Result<String, Str
         return Ok(format!("Local learner data is already current (v{SEED_VERSION}); your corrections were preserved."));
     }
     import_seed(&mut db, &state.path)?;
+    let syllable_spellings = build_syllable_spelling_index(&db)?;
+    *state
+        .syllable_spellings
+        .lock()
+        .map_err(|_| "The local syllable dictionary is busy".to_string())? = syllable_spellings;
     Ok(format!(
         "Updated learner data to v{SEED_VERSION}; your corrections were preserved."
     ))
@@ -142,13 +169,18 @@ pub fn analyze_text(
         .db
         .lock()
         .map_err(|_| "The local dictionary is busy".to_string())?;
-    analyze_with_db(&text, &db, &state.tokenizer)
+    let syllable_spellings = state
+        .syllable_spellings
+        .lock()
+        .map_err(|_| "The local syllable dictionary is busy".to_string())?;
+    analyze_with_db(&text, &db, &state.tokenizer, &syllable_spellings)
 }
 
 fn analyze_with_db(
     text: &str,
     db: &Connection,
     tokenizer: &kham_core::Tokenizer,
+    syllable_spellings: &SyllableSpellingIndex,
 ) -> Result<Vec<SentenceCard>, String> {
     let segmenter = kham_core::sentence::SentenceSegmenter::new();
     let mut cards = Vec::new();
@@ -163,7 +195,7 @@ fn analyze_with_db(
             .iter()
             .filter(|t| t.kind == kham_core::TokenKind::Thai)
         {
-            words.extend(resolve_token(&db, token.text)?);
+            words.extend(resolve_token(db, syllable_spellings, token.text)?);
         }
         let reading = words
             .iter()
@@ -194,8 +226,12 @@ fn analyze_with_db(
     Ok(cards)
 }
 
-fn resolve_token(db: &Connection, token: &str) -> Result<Vec<WordCard>, String> {
-    let direct = lookup_word(db, token)?;
+fn resolve_token(
+    db: &Connection,
+    syllable_spellings: &SyllableSpellingIndex,
+    token: &str,
+) -> Result<Vec<WordCard>, String> {
+    let direct = lookup_word(db, syllable_spellings, token)?;
     if direct.meaning.is_some() {
         return Ok(vec![direct]);
     }
@@ -206,7 +242,7 @@ fn resolve_token(db: &Connection, token: &str) -> Result<Vec<WordCard>, String> 
         let mut matched: Option<(usize, WordCard)> = None;
         for end in (start + 1..=chars.len().min(start + 16)).rev() {
             let part: String = chars[start..end].iter().collect();
-            let card = lookup_word(db, &part)?;
+            let card = lookup_word(db, syllable_spellings, &part)?;
             if card.meaning.is_some() {
                 matched = Some((end, card));
                 break;
@@ -217,14 +253,18 @@ fn resolve_token(db: &Connection, token: &str) -> Result<Vec<WordCard>, String> 
             start = end;
         } else {
             let part = chars[start].to_string();
-            output.push(lookup_word(db, &part)?);
+            output.push(lookup_word(db, syllable_spellings, &part)?);
             start += 1;
         }
     }
     Ok(output)
 }
 
-fn lookup_word(db: &Connection, word: &str) -> Result<WordCard, String> {
+fn lookup_word(
+    db: &Connection,
+    syllable_spellings: &SyllableSpellingIndex,
+    word: &str,
+) -> Result<WordCard, String> {
     let example: Option<(String, String)> = db
         .query_row(
             "SELECT thai,english FROM examples WHERE word_id=?1 ORDER BY pick DESC LIMIT 1",
@@ -251,6 +291,7 @@ fn lookup_word(db: &Connection, word: &str) -> Result<WordCard, String> {
             Some("user-provided".into()),
             None,
             example,
+            syllable_spellings,
         ));
     }
     let entry: Option<(String, Option<String>, String, String)> = db
@@ -294,9 +335,118 @@ fn lookup_word(db: &Connection, word: &str) -> Result<WordCard, String> {
             Some(confidence),
             exact_tones,
             example,
+            syllable_spellings,
         ));
     }
-    Ok(card(word, None, None, None, None, None, None, example))
+    Ok(card(
+        word,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        example,
+        syllable_spellings,
+    ))
+}
+
+fn build_syllable_spelling_index(db: &Connection) -> Result<SyllableSpellingIndex, String> {
+    let mut statement = db
+        .prepare(
+            "SELECT word, reading FROM words WHERE reading IS NOT NULL AND trim(reading) != ''",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut index: SyllableSpellingIndex = HashMap::new();
+    for row in rows {
+        let (word, reading) = row.map_err(|e| e.to_string())?;
+        // In this dataset, hyphens delimit the syllables of a compound reading.
+        // A single uninterrupted romanised reading is the dictionary's evidence
+        // that the spelling can serve as one syllable in the alignment index.
+        if reading.contains('-')
+            || reading.split_whitespace().count() != 1
+            || !is_thai_orthographic_word(&word)
+        {
+            continue;
+        }
+        index.entry(reading).or_default().push(word);
+    }
+    for spellings in index.values_mut() {
+        spellings.sort();
+        spellings.dedup();
+    }
+    Ok(index)
+}
+
+fn is_thai_orthographic_word(word: &str) -> bool {
+    !word.is_empty()
+        && word
+            .chars()
+            .all(|character| ('\u{0E00}'..='\u{0E7F}').contains(&character))
+        && word
+            .chars()
+            .any(|character| ('\u{0E01}'..='\u{0E2E}').contains(&character))
+}
+
+fn align_syllable_spellings(
+    word: &str,
+    readings: &[String],
+    index: &SyllableSpellingIndex,
+) -> SyllableAlignment {
+    if !is_thai_orthographic_word(word)
+        || readings.is_empty()
+        || readings.iter().any(String::is_empty)
+    {
+        return SyllableAlignment::InvalidInput;
+    }
+    if readings.iter().any(|reading| !index.contains_key(reading)) {
+        return SyllableAlignment::MissingReadingCandidate;
+    }
+
+    fn search(
+        remaining: &str,
+        readings: &[String],
+        index: &SyllableSpellingIndex,
+        path: &mut Vec<String>,
+        complete_paths: &mut Vec<Vec<String>>,
+    ) {
+        if complete_paths.len() > 1 {
+            return;
+        }
+        if readings.is_empty() {
+            if remaining.is_empty() {
+                complete_paths.push(path.clone());
+            }
+            return;
+        }
+        let Some(candidates) = index.get(&readings[0]) else {
+            return;
+        };
+        for candidate in candidates {
+            let Some(rest) = remaining.strip_prefix(candidate) else {
+                continue;
+            };
+            path.push(candidate.clone());
+            search(rest, &readings[1..], index, path, complete_paths);
+            path.pop();
+            if complete_paths.len() > 1 {
+                return;
+            }
+        }
+    }
+
+    let mut complete_paths = Vec::with_capacity(2);
+    search(word, readings, index, &mut Vec::new(), &mut complete_paths);
+    match complete_paths.len() {
+        0 => SyllableAlignment::NoCompleteSpellingPath,
+        1 => SyllableAlignment::Aligned(complete_paths.pop().unwrap()),
+        _ => SyllableAlignment::Ambiguous,
+    }
 }
 
 fn card(
@@ -308,16 +458,33 @@ fn card(
     confidence: Option<String>,
     exact_tones: Option<String>,
     example: Option<(String, String)>,
+    syllable_spellings: &SyllableSpellingIndex,
 ) -> WordCard {
     let tone_names: Vec<&str> = exact_tones.as_deref().unwrap_or("").split('-').collect();
-    let syllables = reading
-        .as_deref()
-        .unwrap_or("")
+    let raw_reading = reading.as_deref().unwrap_or("");
+    let has_complete_reading =
+        !raw_reading.is_empty() && raw_reading.split('-').all(|syllable| !syllable.is_empty());
+    let syllable_readings: Vec<String> = raw_reading
         .split('-')
         .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    let spelling_alignment = if has_complete_reading {
+        match align_syllable_spellings(word, &syllable_readings, syllable_spellings) {
+            SyllableAlignment::Aligned(spellings) => Some(spellings),
+            SyllableAlignment::Ambiguous
+            | SyllableAlignment::MissingReadingCandidate
+            | SyllableAlignment::NoCompleteSpellingPath
+            | SyllableAlignment::InvalidInput => None,
+        }
+    } else {
+        None
+    };
+    let syllables = syllable_readings
+        .iter()
         .enumerate()
         .map(|(i, s)| Syllable {
-            reading: s.to_string(),
+            reading: s.clone(),
             tone: match tone_names.get(i).copied() {
                 Some("mid") => "mid",
                 Some("low") => "low",
@@ -326,6 +493,9 @@ fn card(
                 Some("rising") => "rising",
                 _ => tone(s),
             },
+            spelling: spelling_alignment
+                .as_ref()
+                .and_then(|spellings| spellings.get(i).cloned()),
         })
         .collect();
     WordCard {
@@ -857,6 +1027,166 @@ mod tests {
         assert_eq!(tone("khǎo"), "rising");
         assert_eq!(tone("dee"), "mid");
     }
+
+    #[test]
+    fn dictionary_index_aligns_known_and_unseen_compounds_only_when_unique() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let index = build_syllable_spelling_index(&db).unwrap();
+
+        let cases: [(&str, &[&str], &[&str]); 12] = [
+            ("กินข้าว", &["gin", "kâao"], &["กิน", "ข้าว"]),
+            ("ทุกคน", &["túk", "kon"], &["ทุก", "คน"]),
+            // This phrase has no compound row in the bundled dictionary; both
+            // readings still align through its independently listed syllables.
+            ("บ้านเรา", &["bâan", "rao"], &["บ้าน", "เรา"]),
+            ("ทำงาน", &["tam", "ngaan"], &["ทำ", "งาน"]),
+            ("ขอบคุณ", &["kɔ̀ɔp", "kun"], &["ขอบ", "คุณ"]),
+            ("โรงเรียน", &["roong", "riian"], &["โรง", "เรียน"]),
+            ("รถไฟ", &["rót", "fai"], &["รถ", "ไฟ"]),
+            ("อาชีพ", &["aa", "chîip"], &["อา", "ชีพ"]),
+            ("ที่นี่", &["tîi", "nîi"], &["ที่", "นี่"]),
+            ("ชี้ที่นี่", &["chíi", "tîi", "nîi"], &["ชี้", "ที่", "นี่"]),
+            ("ลูกนก", &["lûuk", "nók"], &["ลูก", "นก"]),
+            ("นกบิน", &["nók", "bin"], &["นก", "บิน"]),
+        ];
+        for (word, readings, expected) in cases {
+            let readings = readings
+                .iter()
+                .map(|reading| reading.to_string())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                align_syllable_spellings(word, &readings, &index),
+                SyllableAlignment::Aligned(
+                    expected
+                        .iter()
+                        .map(|spelling| spelling.to_string())
+                        .collect()
+                ),
+                "alignment for {word}"
+            );
+        }
+
+        // The inspector payload uses dictionary entries directly, not a
+        // separately maintained list of compound word boundaries.
+        for (word, reading) in [
+            ("กินข้าว", "gin-kâao"),
+            ("ทุกคน", "túk-kon"),
+            ("อาชีพ", "aa-chîip"),
+            ("ที่นี่", "tîi-nîi"),
+            ("ชี้", "chíi"),
+        ] {
+            let card = lookup_word(&db, &index, word).unwrap();
+            assert_eq!(card.reading.as_deref(), Some(reading));
+            assert!(card
+                .syllables
+                .iter()
+                .all(|syllable| syllable.spelling.is_some()));
+        }
+    }
+
+    #[test]
+    fn dictionary_alignment_coverage_and_failure_counts_are_measured() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let index = build_syllable_spelling_index(&db).unwrap();
+        let indexed_spellings = index.values().map(Vec::len).sum::<usize>();
+        let indexed_readings = index.len();
+        let mut statement = db
+            .prepare("SELECT word, reading FROM words WHERE reading LIKE '%-%'")
+            .unwrap();
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap();
+        let (mut eligible, mut aligned, mut ambiguous) = (0, 0, 0);
+        let (mut missing_reading, mut no_complete_path, mut invalid) = (0, 0, 0);
+        for row in rows {
+            let (word, reading) = row.unwrap();
+            if !is_thai_orthographic_word(&word) {
+                continue;
+            }
+            let readings = reading.split('-').map(str::to_string).collect::<Vec<_>>();
+            if readings.len() < 2 || readings.iter().any(String::is_empty) {
+                continue;
+            }
+            eligible += 1;
+            match align_syllable_spellings(&word, &readings, &index) {
+                SyllableAlignment::Aligned(_) => aligned += 1,
+                SyllableAlignment::Ambiguous => ambiguous += 1,
+                SyllableAlignment::MissingReadingCandidate => missing_reading += 1,
+                SyllableAlignment::NoCompleteSpellingPath => no_complete_path += 1,
+                SyllableAlignment::InvalidInput => invalid += 1,
+            }
+        }
+        assert!(
+            eligible > 1_000,
+            "expected a substantial compound dictionary"
+        );
+        assert_eq!(eligible, 14_590, "compound coverage denominator changed");
+        assert!(aligned > 0);
+        assert_eq!(aligned + ambiguous + missing_reading + no_complete_path + invalid, eligible);
+        eprintln!(
+            "Dictionary syllable index: {indexed_spellings} spellings across {indexed_readings} readings. Compound spelling alignment: {aligned}/{eligible} ({:.1}%) complete unique; {ambiguous} ambiguous, {missing_reading} missing one or more reading candidates, {no_complete_path} candidate sets with no complete spelling path, {invalid} invalid inputs.",
+            aligned as f64 * 100.0 / eligible as f64
+        );
+    }
+
+    #[test]
+    fn ambiguous_or_partial_paths_keep_the_safe_fallback() {
+        let index = HashMap::from([
+            ("a".to_string(), vec!["ก".to_string(), "กา".to_string()]),
+            ("b".to_string(), vec!["ข".to_string(), "าข".to_string()]),
+        ]);
+        assert_eq!(
+            align_syllable_spellings("กาข", &["a".into(), "b".into()], &index),
+            SyllableAlignment::Ambiguous
+        );
+        assert_eq!(
+            align_syllable_spellings("ข", &["missing".into()], &index),
+            SyllableAlignment::MissingReadingCandidate
+        );
+        assert_eq!(
+            align_syllable_spellings("ข", &["a".into()], &index),
+            SyllableAlignment::NoCompleteSpellingPath
+        );
+        assert_eq!(
+            align_syllable_spellings("ข", &[], &index),
+            SyllableAlignment::InvalidInput
+        );
+    }
+
+    #[test]
+    fn shared_word_card_fixture_matches_the_bundled_dictionary_and_index() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let index = build_syllable_spelling_index(&db).unwrap();
+        let fixture: serde_json::Value = serde_json::from_str(include_str!("../../tests/fixtures/syllable-inspector.json")).unwrap();
+
+        for card_fixture in fixture["dictionaryCards"].as_array().unwrap() {
+            let word = card_fixture["word"].as_str().unwrap();
+            let actual = lookup_word(&db, &index, word).unwrap();
+            assert_eq!(
+                serde_json::to_value(&actual.syllables).unwrap(),
+                card_fixture["syllables"],
+                "production WordCard payload for {word}"
+            );
+        }
+
+        for compound in fixture["unseenCompounds"].as_array().unwrap() {
+            let word = compound["word"].as_str().unwrap();
+            let syllables = compound["syllables"].as_array().unwrap();
+            let readings = syllables.iter().map(|item| item["reading"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+            let spellings = syllables.iter().map(|item| item["spelling"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+            assert_eq!(
+                align_syllable_spellings(word, &readings, &index),
+                SyllableAlignment::Aligned(spellings),
+                "dictionary-derived unseen compound {word}"
+            );
+        }
+    }
+
     #[test]
     fn source_database_has_real_learner_content() {
         let path =
@@ -962,13 +1292,15 @@ mod tests {
         let tokenizer = kham_core::Tokenizer::builder()
             .dict_merge(&word_list)
             .build();
-        let card = lookup_word(&db, "เดิน").unwrap();
+        let syllable_spellings = build_syllable_spelling_index(&db).unwrap();
+        let card = lookup_word(&db, &syllable_spellings, "เดิน").unwrap();
         assert_eq!(card.reading.as_deref(), Some("dəən"));
         assert_eq!(card.meaning.as_deref(), Some("to stroll"));
         let sentence = analyze_with_db(
             "เราเดินดูของหลายอย่าง ทั้งผัก ผลไม้ และอาหารพื้นบ้าน",
             &db,
             &tokenizer,
+            &syllable_spellings,
         )
         .unwrap();
         assert_eq!(sentence.len(), 1);

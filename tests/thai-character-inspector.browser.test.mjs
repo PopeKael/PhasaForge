@@ -13,6 +13,8 @@ const edge = [
   "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
 ].find(path => process.getBuiltinModule("node:fs").existsSync(path));
 assert.ok(edge, "Microsoft Edge is required for Thai character hover geometry verification");
+const fixtures = JSON.parse(await readFile(join(root, "tests", "fixtures", "syllable-inspector.json"), "utf8"));
+const fixturesSource = JSON.stringify(fixtures);
 
 const html = `<!doctype html><meta charset="utf-8"><style>
 body{margin:0;padding:32px;background:#061d22;color:white;font:64px/1.2 "Leelawadee UI","Noto Sans Thai","Segoe UI",sans-serif}
@@ -22,18 +24,21 @@ body{margin:0;padding:32px;background:#061d22;color:white;font:64px/1.2 "Leelawa
 #tooltip{position:fixed;pointer-events:none;font:12px/1.3 sans-serif;background:#10282f;padding:6px}
 </style><div id="cases"></div><div id="tooltip" hidden></div><script type="module">
 import {createThaiCharacterHitAreas} from '/thai-character-inspector.mjs';
-const cases=[['career','อาชีพ',[{reading:'aa',tone:'mid'},{reading:'chîip',tone:'falling'}]],['below','กุ',[{reading:'ku',tone:'low'}]],['tone','ก่',[{reading:'kà',tone:'low'}]]];
-for(const [id,word,syllables] of cases){
+const fixtures=${fixturesSource};
+const byWord=word=>fixtures.dictionaryCards.find(card=>card.word===word);
+const cases=[['career',byWord('อาชีพ')],['everyone',byWord('ทุกคน')],['bird',byWord('นก')],['unseen',fixtures.unseenCompounds.find(card=>card.word==='ลูกนก')],['below',{word:'กุ',syllables:[{reading:'ku',tone:'low',spelling:'กุ'}]}],['tone',{word:'ก่',syllables:[{reading:'kà',tone:'low',spelling:'ก่'}]}]];
+for(const [id,card] of cases){
+ const {word,syllables}=card;
  const inspector=document.createElement('span');inspector.className='inspector';inspector.id='inspector-'+id;
  const label=document.createElement('span');label.className='label';label.id='label-'+id;label.textContent=word;
  const overlay=document.createElement('span');overlay.className='overlay';overlay.id='overlay-'+id;
  inspector.append(label,overlay);document.querySelector('#cases').append(inspector,document.createElement('br'));
- createThaiCharacterHitAreas(word,label,overlay,(target,info)=>{window.__lastHit=target;const tip=document.querySelector('#tooltip');tip.textContent=info?.syllableInfo?info.syllableInfo.spelling+' '+info.syllableInfo.reading+' '+info.syllableInfo.tone+' '+info.syllableInfo.breakdown.map(part=>part.character+' '+part.name+' '+part.romanization+' '+part.explanation).join(' '):info?info.character+' '+info.name+' '+info.romanization+' '+info.explanation:'';tip.hidden=!info;},()=>{document.querySelector('#tooltip').hidden=true;},syllables);
+ createThaiCharacterHitAreas(word,label,overlay,(target,info)=>{window.__lastHit=target;const tip=document.querySelector('#tooltip');const syllable=info?.syllableInfo;tip.textContent=syllable?'Syllable '+syllable.index+'/'+syllable.count+': '+syllable.spelling+' '+syllable.reading+' '+syllable.tone+' tone '+syllable.combined+' '+syllable.toneRule+' '+syllable.breakdown.map(part=>part.character+' '+part.name+' '+part.romanization+' '+part.explanation).join(' '):info?info.character+' '+info.name+' '+info.romanization+' '+info.explanation:'';tip.hidden=!info;},()=>{document.querySelector('#tooltip').hidden=true;},syllables);
 }
 window.__thaiReady=true;
 </script>`;
 
-function waitFor(fn, timeout = 15000) {
+function waitFor(fn, timeout = 30000) {
   const deadline = Date.now() + timeout;
   return new Promise((resolve, reject) => {
     const poll = async () => {
@@ -55,15 +60,16 @@ async function connect(url) {
     const callbacks = pending.get(message.id);
     if (!callbacks) return;
     pending.delete(message.id);
+    clearTimeout(callbacks.timeout);
     message.error ? callbacks.reject(new Error(JSON.stringify(message.error))) : callbacks.resolve(message.result);
   });
   return {
     call(method, params = {}) {
       const requestId = ++id;
       return new Promise((resolve, reject) => {
-        pending.set(requestId, { resolve, reject });
+        const timeout = setTimeout(() => { if (pending.has(requestId)) { pending.delete(requestId); reject(new Error(`CDP timeout: ${method}`)); } }, 30000);
+        pending.set(requestId, { resolve, reject, timeout });
         ws.send(JSON.stringify({ id: requestId, method, params }));
-        setTimeout(() => { if (pending.has(requestId)) { pending.delete(requestId); reject(new Error(`CDP timeout: ${method}`)); } }, 10000);
       });
     },
     close() { ws.close(); },
@@ -98,9 +104,13 @@ test("hover hit areas select the combining vowel, consonant, below vowel, and to
     });
     await page.call("Page.enable");
     const evaluate = async expression => {
-      const result = await page.call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
-      return result.result.value;
+      try {
+        const result = await page.call("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
+        if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text);
+        return result.result.value;
+      } catch (error) {
+        throw new Error(`Runtime.evaluate failed for ${expression}: ${error.message}`, { cause: error });
+      }
     };
     await waitFor(async () => evaluate("window.__thaiReady === true"));
 
@@ -130,6 +140,24 @@ test("hover hit areas select the combining vowel, consonant, below vowel, and to
     assert.match((await hoverAt(otherRects.tone)).tooltip, /ไม้เอก.*mai ek/);
     await evaluate("window.__lastHit.dispatchEvent(new MouseEvent('mouseleave'))");
     assert.equal(await evaluate("document.querySelector('#tooltip').hidden"), true, "tooltip disappears when the pointer leaves the mark");
+
+    const everybodyRects = await evaluate(`(() => {const get=i=>{const e=document.querySelector('#overlay-everyone [data-character-index="'+i+'"]');const r=e.getBoundingClientRect();return {cx:r.left+r.width/2,cy:r.top+r.height/2};};return {initial:get(3),final:get(4)};})()`);
+    const personInitial = await hoverAt(everybodyRects.initial);
+    assert.equal(personInitial.target, "3", "hovering ค in ทุกคน selects the second syllable's initial");
+    assert.equal(personInitial.character, "ค");
+    assert.match(personInitial.tooltip, /Syllable 2\/2: คน kon mid tone/);
+    assert.match(personInitial.tooltip, /low-class initial “kh”/);
+    assert.match(personInitial.tooltip, /unwritten short \/o\/ vowel.*final \/n\//);
+    const personFinal = await hoverAt(everybodyRects.final);
+    assert.equal(personFinal.target, "4", "hovering น in ทุกคน selects the second syllable's final");
+    assert.equal(personFinal.character, "น");
+    assert.match(personFinal.tooltip, /Final nasal “n”/);
+
+    const unseenRects = await evaluate(`(() => {const e=document.querySelector('#overlay-unseen [data-character-index="3"]');const r=e.getBoundingClientRect();return {cx:r.left+r.width/2,cy:r.top+r.height/2};})()`);
+    const unseenHover = await hoverAt(unseenRects);
+    assert.equal(unseenHover.character, "น");
+    assert.match(unseenHover.tooltip, /Syllable 2\/2: นก nók high tone/);
+    assert.match(unseenHover.tooltip, /unwritten short \/o\/ vowel.*final \/k\//);
   } finally {
     page?.close();
     browserCdp?.close();

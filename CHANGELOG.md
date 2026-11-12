@@ -1,5 +1,12 @@
 # Changelog
 
+# 0.6.3 — Dictionary-derived syllable alignment
+
+- Build syllable spelling boundaries from the bundled single-syllable dictionary index and accept only unique complete matches.
+- Inspect dictionary-confirmed bare closed C+C spellings with an unwritten short /o/ vowel when the romanised reading confirms the final consonant.
+- Keep an explanatory fallback for unsupported, ambiguous and dictionary-mismatched spellings.
+- Add shared Rust/JavaScript dictionary-card fixtures for acceptance and unseen compounds, including regression checks for implicit vowels.
+
 # 0.6.2 — Thai Character Inspector
 
 - Added an offline character inspector to the large word in the Words panel, with Thai letter names, romanized names, and cautious word-specific sound/function notes.
