@@ -1,5 +1,15 @@
 # Acceptance record
 
+## Version 0.6.2 development — Thai Character Inspector
+
+| Check | Result | Evidence |
+|---|---|---|
+| Offline character reference | Passed | 44 consonants, common vowel signs, tone marks and other common Thai marks have deterministic Thai names and romanized names. Context descriptions distinguish alphabet names from onset/coda sound and avoid inferring tone from a mark alone. |
+| Character hover and Thai shaping | Passed | Edge browser geometry test verifies the visible `ี` region in `อาชีพ` resolves to index 3 (`ี`) while the visible `ช` region resolves to index 2 (`ช`). It also verifies below-vowel and tone-mark hit areas and tooltip dismissal. The visible word remains one text node. |
+| UI tests | Passed | `npm run test:ui`: 24/24, including five focused reference/interaction tests. |
+| Rust tests | Passed | `cargo test --lib --manifest-path src-tauri/Cargo.toml --locked`: 13/13. |
+| Standalone executable and live inspector | Passed | Built with `npm run tauri build -- --no-bundle` and launched the copied executable directly without a Vite listener. The running WebView showed the `tauri.localhost` interface. Live inspection of `อาชีพ` showed `ี · สระอี · sara ii` when targeting the above-consonant vowel mark, and `ช · ช ช้าง · cho chang` when targeting the consonant. Artifact: `release-artifacts/0.6.2-thai-character-inspector-verified/PhasaForge.exe` · 42,322,432 bytes · SHA-256 `3ED283A1FD9E5B75F7345A428D5D45535044BB62FEF0A6C91EDA035C9DC6C2BD`. No installer was built. |
+
 # Version 0.6.1 development — Windows sign-in startup option
 
 | Check | Result | Evidence |

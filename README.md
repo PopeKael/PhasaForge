@@ -1,6 +1,6 @@
 # PhasaForge
 
-PhasaForge is a compact Windows Thai study popup. Version 0.6.1 adds an optional Windows sign-in startup setting. Selected Text history retains its sentence analysis and translations locally, so switching between saved passages does not repeat provider requests.
+PhasaForge is a compact Windows Thai study popup. Version 0.6.2 adds an offline Thai Character Inspector to the large word in the Words tab. Selected Text history retains its sentence analysis and translations locally, so switching between saved passages does not repeat provider requests.
 
 ## What 0.4.0 adds
 
@@ -14,7 +14,11 @@ Practice keeps the ten newest microphone recordings in local app data, including
 
 Ollama discovery is read-only: PhasaForge does not change the shared service's model-store setting or restart it. Loading a selected local model remains an explicit Save action.
 
-## What 0.6.1 adds
+## What 0.6.2 adds
+
+- Hover a Thai consonant, vowel sign or tone mark in the large Words-panel word to see its alphabet name, romanized name and a word-context explanation. This uses an internal reference table and makes no cloud requests.
+
+## What 0.6.1 added
 
 - Optional **Start PhasaForge when I sign in to Windows** setting. It is off by default and uses the current Windows user's startup registration.
 

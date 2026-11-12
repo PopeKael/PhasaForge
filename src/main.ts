@@ -9,6 +9,7 @@ import { lessonViewState } from "./view-state.mjs";
 import { captureNotice, capturedSourceText } from "./capture-state.mjs";
 import { isConfigured, loadSettings, MMS_VOICE, persistSettings, SETTINGS_KEY } from "./configuration-state.mjs";
 import { loadSelectedTextHistory, nextSelectedTextIndex, previousSelectedTextIndex, rememberSelectedText, saveSelectedTextHistory, selectedTextIndex as findSelectedTextIndex, shouldAutoTranslateSelectedText } from "./selected-text-history.mjs";
+import { createThaiCharacterHitAreas } from "./thai-character-inspector.mjs";
 import "./style.css";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -49,6 +50,12 @@ const ttsAudio = document.createElement("audio");
 ttsAudio.id = "native-speech-audio";
 ttsAudio.hidden = true;
 document.body.append(ttsAudio);
+const thaiCharacterTooltip = document.createElement("div");
+thaiCharacterTooltip.className = "thai-character-tooltip";
+thaiCharacterTooltip.id = "thai-character-tooltip";
+thaiCharacterTooltip.setAttribute("role", "tooltip");
+thaiCharacterTooltip.hidden = true;
+document.body.append(thaiCharacterTooltip);
 ttsAudio.addEventListener("ended", () => finishSpeech());
 ttsAudio.addEventListener("error", () => {
   $("voice-note").textContent = "Windows returned Thai speech, but the WebView could not play the audio stream.";
@@ -395,12 +402,32 @@ function renderWords(words: WordCard[]): void {
     button.addEventListener("click", () => {
       root.querySelectorAll(".word-chip").forEach(x => x.classList.remove("chosen"));
       button.classList.add("chosen");
+      thaiCharacterTooltip.hidden = true;
       const largeWord = $("word-large");
       largeWord.replaceChildren();
+      const inspector = document.createElement("span"); inspector.className = "thai-inspector"; inspector.lang = "th";
       const label = document.createElement("span"); label.className = "word-label"; label.textContent = word.word;
+      const hitAreas = document.createElement("span"); hitAreas.className = "thai-character-hit-areas"; hitAreas.setAttribute("aria-label", "Thai character inspection");
+      inspector.append(label, hitAreas);
       const playWord = document.createElement("button"); playWord.className = "secondary-button small word-play-button"; playWord.type = "button"; playWord.textContent = "▶ Play Thai word";
       playWord.addEventListener("click", () => speak(word.word, true));
-      largeWord.append(label, playWord);
+      largeWord.append(inspector, playWord);
+      requestAnimationFrame(() => createThaiCharacterHitAreas(word.word, label, hitAreas, (target, info) => {
+        if (!info) return;
+        thaiCharacterTooltip.replaceChildren();
+        const character = document.createElement("strong"); character.className = "thai-character-tooltip-glyph"; character.lang = "th"; character.textContent = info.character;
+        const name = document.createElement("div"); name.className = "thai-character-tooltip-name"; name.textContent = `${info.name} · ${info.romanization}`;
+        const explanation = document.createElement("div"); explanation.className = "thai-character-tooltip-explanation"; explanation.textContent = info.explanation;
+        thaiCharacterTooltip.append(character, name, explanation);
+        thaiCharacterTooltip.hidden = false;
+        const targetRect = target.getBoundingClientRect();
+        const tooltipRect = thaiCharacterTooltip.getBoundingClientRect();
+        const left = Math.max(8, Math.min(window.innerWidth - tooltipRect.width - 8, targetRect.left + targetRect.width / 2 - tooltipRect.width / 2));
+        const above = targetRect.top - tooltipRect.height - 7;
+        const top = above >= 8 ? above : Math.min(window.innerHeight - tooltipRect.height - 8, targetRect.bottom + 7);
+        thaiCharacterTooltip.style.left = `${left}px`;
+        thaiCharacterTooltip.style.top = `${Math.max(8, top)}px`;
+      }, () => { thaiCharacterTooltip.hidden = true; }));
       const details = $("word-details");
       details.replaceChildren();
       const meaning = document.createElement("strong"); meaning.textContent = word.meaning ?? "Meaning not found in the local dictionary";

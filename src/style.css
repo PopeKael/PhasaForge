@@ -81,6 +81,16 @@ input[type=range] { min-width: 30px; width: 100%; accent-color: #02c8c2; }
 .word-chip:hover, .word-chip.chosen { background: #006b6e; border-color: #08d2ca; box-shadow: 0 0 9px #00d3c377; }
 .word-card { flex: 1; min-height: 55px; min-width: 0; display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 1fr); align-items: stretch; padding: 4px 8px; border: 1px solid #42676b; background: linear-gradient(145deg,#10292d,#091d21); border-radius: 11px; }
 .word-large { min-width: 0; max-width: min(42vw, 210px); padding: 0 10px 0 2px; font-size: 29px; line-height: 1.1; display: grid; align-content: center; justify-items: center; gap: 6px; text-align: center; color: #fff; border-right: 1px solid #35757a; overflow-wrap: anywhere; }
+.thai-inspector { position: relative; display: inline-block; max-width: 100%; white-space: nowrap; line-height: 1.1; }
+.word-label { display: block; pointer-events: none; }
+.thai-character-hit-areas { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.thai-character-hit-area { position: absolute; display: block; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: transparent; appearance: none; pointer-events: auto; cursor: help; }
+.thai-character-hit-area:focus-visible { outline: 1px solid #05c7c1; outline-offset: 1px; }
+.thai-character-tooltip { position: fixed; z-index: 1000; max-width: min(230px, calc(100vw - 16px)); padding: 6px 8px; border: 1px solid #4b8c90; border-radius: 7px; background: #10282f; color: #f2f7f6; box-shadow: 0 4px 14px #0009; font-size: 11px; line-height: 1.35; pointer-events: none; overflow-wrap: anywhere; }
+.thai-character-tooltip[hidden] { display: none; }
+.thai-character-tooltip-glyph { display: inline-block; margin-right: 7px; color: #75fffa; font-size: 20px; line-height: 1; vertical-align: middle; }
+.thai-character-tooltip-name { display: inline-block; font-weight: 700; vertical-align: middle; }
+.thai-character-tooltip-explanation { margin-top: 4px; color: #d1dddd; }
 .word-play-button { min-height: 27px; margin-top: 0; padding: 3px 6px; font-size: 10px; }
 .word-details { min-width: 0; padding-left: 9px; font-size: 11px; overflow: auto; }
 .word-details p { margin: 3px 0; color: #c6d2d2; }

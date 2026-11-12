@@ -1,5 +1,11 @@
 # Changelog
 
+# 0.6.2 — Thai Character Inspector
+
+- Added an offline character inspector to the large word in the Words panel, with Thai letter names, romanized names, and cautious word-specific sound/function notes.
+- Kept Thai words in one unchanged text node; measured, transparent per-character hit areas let combining vowels and tone marks be inspected independently.
+- Added reference and browser interaction tests for อาชีพ, above and below vowels, tone marks, final consonants, and compound vowels.
+
 # 0.6.1 — Windows sign-in startup option
 
 - Added an opt-in Setup checkbox to launch PhasaForge when the current Windows user signs in.
