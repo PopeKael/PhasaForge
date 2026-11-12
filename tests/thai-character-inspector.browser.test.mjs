@@ -22,13 +22,13 @@ body{margin:0;padding:32px;background:#061d22;color:white;font:64px/1.2 "Leelawa
 #tooltip{position:fixed;pointer-events:none;font:12px/1.3 sans-serif;background:#10282f;padding:6px}
 </style><div id="cases"></div><div id="tooltip" hidden></div><script type="module">
 import {createThaiCharacterHitAreas} from '/thai-character-inspector.mjs';
-const cases=[['career','อาชีพ'],['below','กุ'],['tone','ก่']];
-for(const [id,word] of cases){
+const cases=[['career','อาชีพ',[{reading:'aa',tone:'mid'},{reading:'chîip',tone:'falling'}]],['below','กุ',[{reading:'ku',tone:'low'}]],['tone','ก่',[{reading:'kà',tone:'low'}]]];
+for(const [id,word,syllables] of cases){
  const inspector=document.createElement('span');inspector.className='inspector';inspector.id='inspector-'+id;
  const label=document.createElement('span');label.className='label';label.id='label-'+id;label.textContent=word;
  const overlay=document.createElement('span');overlay.className='overlay';overlay.id='overlay-'+id;
  inspector.append(label,overlay);document.querySelector('#cases').append(inspector,document.createElement('br'));
- createThaiCharacterHitAreas(word,label,overlay,(target,info)=>{window.__lastHit=target;const tip=document.querySelector('#tooltip');tip.textContent=info?info.character+' '+info.name+' '+info.romanization+' '+info.explanation:'';tip.hidden=!info;},()=>{document.querySelector('#tooltip').hidden=true;});
+ createThaiCharacterHitAreas(word,label,overlay,(target,info)=>{window.__lastHit=target;const tip=document.querySelector('#tooltip');tip.textContent=info?.syllableInfo?info.syllableInfo.spelling+' '+info.syllableInfo.reading+' '+info.syllableInfo.tone+' '+info.syllableInfo.breakdown.map(part=>part.character+' '+part.name+' '+part.romanization+' '+part.explanation).join(' '):info?info.character+' '+info.name+' '+info.romanization+' '+info.explanation:'';tip.hidden=!info;},()=>{document.querySelector('#tooltip').hidden=true;},syllables);
 }
 window.__thaiReady=true;
 </script>`;
@@ -115,13 +115,14 @@ test("hover hit areas select the combining vowel, consonant, below vowel, and to
     const vowelHover = await hoverAt(careerRects.vowel);
     assert.equal(vowelHover.target, "3", "hovering on the visible ี mark selects the vowel hit area");
     assert.equal(vowelHover.character, "ี");
-    assert.match(vowelHover.tooltip, /สระอี.*sara ii/);
-    assert.doesNotMatch(vowelHover.tooltip, /ช ช้าง/);
+    assert.match(vowelHover.tooltip, /ชีพ chîip falling/);
+    assert.match(vowelHover.tooltip, /ี สระอี sara ii/);
+    assert.match(vowelHover.tooltip, /พ พ พาน pho phan Final p stop/);
     const consonantHover = await hoverAt(careerRects.consonant);
     assert.equal(consonantHover.target, "2", "hovering on ช selects the consonant hit area");
     assert.equal(consonantHover.character, "ช");
-    assert.match(consonantHover.tooltip, /ช ช้าง.*cho chang/);
-    assert.doesNotMatch(consonantHover.tooltip, /สระอี/);
+    assert.match(consonantHover.tooltip, /ชีพ chîip falling/);
+    assert.match(consonantHover.tooltip, /ช ช ช้าง cho chang low-class initial/);
 
     const otherRects = await evaluate(`(() => {const get=(group,index)=>{const e=document.querySelector('#overlay-'+group+' [data-character-index="'+index+'"]');const r=e.getBoundingClientRect();return {cx:r.left+r.width/2,cy:r.top+r.height/2};};return {below:get('below',1),base:get('below',0),tone:get('tone',1)};})()`);
     assert.ok(otherRects.below.cy > otherRects.base.cy, "below-vowel hit area stays below its consonant");

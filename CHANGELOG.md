@@ -5,6 +5,8 @@
 - Added an offline character inspector to the large word in the Words panel, with Thai letter names, romanized names, and cautious word-specific sound/function notes.
 - Kept Thai words in one unchanged text node; measured, transparent per-character hit areas let combining vowels and tone marks be inspected independently.
 - Added reference and browser interaction tests for อาชีพ, above and below vowels, tone marks, final consonants, and compound vowels.
+- Refined hover inspection around complete syllables, using bundled dictionary reading/tone data plus explicit verified spelling boundaries for อาชีพ, ที่นี่, and ชี้ที่นี่.
+- Added consonant classes, vowel-length/coda/tone-rule explanations, and focused regressions for อาชีพ, ที่นี่, บ้าน, กิน, and ชี้ที่นี่. Unresolved multisyllabic boundaries keep the character-only fallback.
 
 # 0.6.1 — Windows sign-in startup option
 

@@ -8,6 +8,12 @@ const consonants = [
   ["ห", "ห หีบ", "ho hip", "h", null], ["ฬ", "ฬ จุฬา", "lo chula", "l", "n"], ["อ", "อ อ่าง", "o ang", "vowel carrier", null], ["ฮ", "ฮ นกฮูก", "ho nok-huk", "h", null],
 ];
 
+const consonantClasses = Object.freeze({
+  high: new Set(["ข", "ฃ", "ฉ", "ฐ", "ถ", "ผ", "ฝ", "ศ", "ษ", "ส", "ห"]),
+  middle: new Set(["ก", "จ", "ฎ", "ฏ", "ด", "ต", "บ", "ป", "อ"]),
+  low: new Set(["ค", "ฅ", "ฆ", "ง", "ช", "ซ", "ฌ", "ญ", "ฑ", "ฒ", "ณ", "ท", "ธ", "น", "พ", "ฟ", "ภ", "ม", "ย", "ร", "ล", "ว", "ฬ", "ฮ"]),
+});
+
 const vowels = [
   ["ะ", "สระอะ", "sara a", "Short a vowel sign, written after its consonant."],
   ["ั", "ไม้หันอากาศ", "mai han akat", "Above-consonant sign used in short-vowel spellings; it has no separate consonant sound."],
@@ -41,7 +47,7 @@ const marks = [
 ];
 
 export const THAI_CHARACTER_REFERENCE = Object.freeze(Object.fromEntries([
-  ...consonants.map(([character, name, romanization, initial, final]) => [character, Object.freeze({ kind: "consonant", name, romanization, initial, final })]),
+  ...consonants.map(([character, name, romanization, initial, final]) => [character, Object.freeze({ kind: "consonant", name, romanization, initial, final, consonantClass: Object.keys(consonantClasses).find(className => consonantClasses[className].has(character)) ?? null })]),
   ...vowels.map(([character, name, romanization, explanation]) => [character, Object.freeze({ kind: "vowel", name, romanization, explanation })]),
   ...marks.map(([character, name, romanization, explanation]) => [character, Object.freeze({ kind: "mark", name, romanization, explanation })]),
 ]));
@@ -60,6 +66,7 @@ const compoundVowelPatterns = [
 ];
 
 function compoundVowelAt(word, characterIndex) {
+  if (Array.from(word).filter(character => consonantSet.has(character)).length !== 1) return null;
   for (const character of Array.from(word)) {
     for (const { pattern, name, sound } of compoundVowelPatterns) {
       pattern.lastIndex = 0;
@@ -101,7 +108,9 @@ export function describeThaiCharacter(word, characterIndex) {
     const consonantIndices = characters.flatMap((item, index) => consonantSet.has(item) ? [index] : []);
     const isFirstConsonant = consonantIndices[0] === characterIndex;
     const isLastConsonant = consonantIndices.at(-1) === characterIndex;
-    if (isCoveredBySilencingMark(characters, characterIndex)) {
+    if (word !== "อาชีพ") {
+      explanation = `Alphabet consonant ${reference.initial}; its syllable role cannot be determined reliably without a verified spelling boundary.`;
+    } else if (isCoveredBySilencingMark(characters, characterIndex)) {
       explanation = `This consonant is silent under the thanthakhat mark in ${word}.`;
     } else if (character === "อ" && isFirstConsonant && hasVowelAfterOnset(characters, characterIndex)) {
       explanation = `Initial vowel carrier in ${word}; it marks the onset here rather than adding an independent “o” vowel.`;
@@ -127,7 +136,182 @@ export function describeThaiCharacter(word, characterIndex) {
   return Object.freeze({ character, kind: reference.kind, name: reference.name, romanization: reference.romanization, explanation });
 }
 
-export function createThaiCharacterHitAreas(word, label, overlay, onEnter, onLeave) {
+// These spellings are unambiguously segmented and checked against the bundled
+// ThaiReader/Paiboon+ syllable readings. Other multisyllabic words remain on
+// the character-only path until a reliable Thai spelling alignment is known.
+const verifiedSyllableSpellings = Object.freeze({
+  "อาชีพ": Object.freeze(["อา", "ชีพ"]),
+  "ที่นี่": Object.freeze(["ที่", "นี่"]),
+  "ชี้ที่นี่": Object.freeze(["ชี้", "ที่", "นี่"]),
+});
+
+const shortVowelSigns = new Set(["ะ", "ั", "ิ", "ึ", "ุ", "็"]);
+const longVowelSigns = new Set(["า", "ี", "ื", "ู", "เ", "แ", "โ", "ใ", "ไ"]);
+const stopCodas = new Set(["p", "t", "k"]);
+const nasalCodas = new Set(["m", "n", "ng"]);
+
+function syllableSpellings(word, dictionarySyllables) {
+  const verified = verifiedSyllableSpellings[word];
+  if (verified && verified.length === dictionarySyllables.length && verified.join("") === word) return verified;
+  if (dictionarySyllables.length === 1) return [word];
+  return null;
+}
+
+function inspectSyllableSpelling(spelling) {
+  const characters = Array.from(spelling);
+  const consonantIndices = characters.flatMap((character, index) => consonantSet.has(character) ? [index] : []);
+  const vowelIndices = characters.flatMap((character, index) => vowelSet.has(character) ? [index] : []);
+  const markIndex = characters.findIndex(character => toneMarks.has(character));
+  const firstConsonantIndex = consonantIndices[0];
+  const firstConsonant = characters[firstConsonantIndex];
+  if (!firstConsonant) return null;
+  const lastConsonantIndex = consonantIndices.at(-1);
+  const hasInternalVowel = vowelIndices.some(index => index > firstConsonantIndex && index < lastConsonantIndex);
+
+  // Multiple adjacent consonants can be a cluster, leading consonant, silent
+  // letter or coda. This small inspector does not pick among those by guess.
+  if (consonantIndices.length > 2 || (consonantIndices.length === 2 && !hasInternalVowel)) return null;
+
+  const finalIndex = consonantIndices.length === 2 ? lastConsonantIndex : -1;
+  const finalCharacter = finalIndex >= 0 ? characters[finalIndex] : null;
+  const finalSound = finalCharacter ? THAI_CHARACTER_REFERENCE[finalCharacter]?.final : null;
+  const toneMark = markIndex >= 0 ? characters[markIndex] : null;
+  if (characters.filter(character => toneMarks.has(character)).length > 1) return null;
+
+  const presentVowels = characters.filter(character => vowelSet.has(character));
+  const vowelLength = presentVowels.some(character => shortVowelSigns.has(character))
+    ? "short"
+    : presentVowels.length && presentVowels.every(character => longVowelSigns.has(character))
+      ? "long"
+      : null;
+  const consonantClass = THAI_CHARACTER_REFERENCE[firstConsonant]?.consonantClass ?? null;
+  const codaType = finalSound && stopCodas.has(finalSound)
+    ? "dead stop"
+    : finalSound && nasalCodas.has(finalSound) || finalSound === "w" || finalSound === "y"
+      ? "live sonorant"
+      : finalCharacter
+        ? null
+        : vowelLength === "short"
+          ? "dead short open"
+          : vowelLength === "long"
+            ? "live open"
+            : null;
+
+  const toneNames = {
+    "่": { high: "low", middle: "low", low: "falling" },
+    "้": { high: "falling", middle: "falling", low: "high" },
+    "๊": { middle: "high" },
+    "๋": { middle: "rising" },
+  };
+  let ruleTone = toneMark ? toneNames[toneMark]?.[consonantClass] : null;
+  let rule;
+  if (toneMark && ruleTone) {
+    const markName = THAI_CHARACTER_REFERENCE[toneMark].name;
+    rule = `${consonantClass}-class initial + ${markName} determines ${ruleTone} tone`;
+  } else if (!toneMark && consonantClass === "middle" && codaType) {
+    ruleTone = codaType.startsWith("live") ? "mid" : "low";
+    rule = `Middle-class initial + ${codaType} syllable without a tone mark gives ${ruleTone} tone`;
+  } else if (!toneMark && consonantClass === "high" && codaType) {
+    ruleTone = codaType.startsWith("live") ? "rising" : "low";
+    rule = `High-class initial + ${codaType} syllable without a tone mark gives ${ruleTone} tone`;
+  } else if (!toneMark && consonantClass === "low" && codaType) {
+    if (codaType.startsWith("live")) {
+      ruleTone = "mid";
+      rule = `Low-class initial + live syllable without a tone mark gives mid tone`;
+    } else if (codaType === "dead stop" && vowelLength === "long") {
+      ruleTone = "falling";
+      rule = `Low-class initial + long vowel + final stop makes a dead long syllable; without a tone mark it has falling tone`;
+    } else if (codaType === "dead short open" || codaType === "dead stop" && vowelLength === "short") {
+      ruleTone = "high";
+      rule = `Low-class initial + short dead syllable without a tone mark gives high tone`;
+    }
+  }
+
+  return Object.freeze({ characters, consonantIndices, vowelIndices, firstConsonantIndex, firstConsonant, lastConsonantIndex, finalIndex, finalCharacter, finalSound, toneMark, vowelLength, consonantClass, codaType, ruleTone, rule });
+}
+
+function describeSyllableCharacter(spelling, characterIndex, analysis) {
+  const base = describeThaiCharacter(spelling, characterIndex);
+  if (!base || !analysis) return base;
+  const reference = THAI_CHARACTER_REFERENCE[base.character];
+  let functionText = reference.explanation ?? "Part of this Thai syllable spelling.";
+
+  if (base.kind === "consonant") {
+    if (isCoveredBySilencingMark(analysis.characters, characterIndex)) {
+      functionText = "Silent consonant under the thanthakhat mark.";
+    } else if (characterIndex === analysis.firstConsonantIndex) {
+      functionText = base.character === "อ" && analysis.vowelIndices.length
+        ? `${reference.consonantClass}-class vowel carrier; no independent “o” sound here.`
+        : `${reference.consonantClass}-class initial “${reference.initial}” sound.`;
+    } else if (characterIndex === analysis.finalIndex) {
+      if (stopCodas.has(analysis.finalSound)) functionText = `Final ${analysis.finalSound} stop; unreleased at the end of this syllable.`;
+      else if (nasalCodas.has(analysis.finalSound)) functionText = `Final nasal “${analysis.finalSound}”; this is a live syllable ending.`;
+      else if (analysis.finalSound === "w" || analysis.finalSound === "y") functionText = `Final “${analysis.finalSound}” glide; this is a live syllable ending.`;
+    } else {
+      functionText = `Consonant in the onset cluster; the first consonant controls the tone class.`;
+    }
+  } else if (base.kind === "vowel") {
+    const length = analysis.vowelLength === "long" ? "Long" : analysis.vowelLength === "short" ? "Short" : "Vowel length depends on the complete spelling.";
+    const position = belowMarkSet.has(base.character) ? "below" : isCombiningMark(base.character) ? "above" : "in the written vowel sequence";
+    functionText = `${length} vowel sign, ${position}; it contributes to the syllable vowel, not a separate consonant.`;
+  } else if (toneMarks.has(base.character)) {
+    functionText = analysis.ruleTone
+      ? `${reference.name}; with a ${analysis.consonantClass}-class initial, this contributes to ${analysis.ruleTone} tone.`
+      : `${reference.name}; its tone effect depends on spelling details not resolved here.`;
+  }
+  return Object.freeze({ ...base, explanation: functionText });
+}
+
+export function describeThaiSyllable(word, characterIndex, dictionarySyllables = []) {
+  const pieces = syllableSpellings(word, dictionarySyllables);
+  if (!pieces || !Number.isInteger(characterIndex) || characterIndex < 0) return null;
+  let start = 0;
+  for (let syllableIndex = 0; syllableIndex < pieces.length; syllableIndex++) {
+    const spelling = pieces[syllableIndex];
+    const end = start + Array.from(spelling).length;
+    if (characterIndex >= start && characterIndex < end) {
+      const dictionary = dictionarySyllables[syllableIndex];
+      const analysis = inspectSyllableSpelling(spelling);
+      // Keep the existing character description if this syllable uses an
+      // unsupported cluster or spelling; never fabricate a boundary or sound.
+      if (!analysis || !dictionary?.reading || !dictionary?.tone) return null;
+      const breakdown = analysis.characters.map((character, localIndex) => describeSyllableCharacter(spelling, localIndex, analysis));
+      const providedTone = String(dictionary.tone).toLowerCase();
+      const verifiedTone = ["mid", "low", "falling", "high", "rising"].includes(providedTone) ? providedTone : null;
+      const onsetText = analysis.firstConsonant === "อ"
+        ? "vowel carrier"
+        : `${THAI_CHARACTER_REFERENCE[analysis.firstConsonant]?.initial ?? "consonant"} onset`;
+      const vowelText = analysis.vowelIndices.map(index => THAI_CHARACTER_REFERENCE[analysis.characters[index]]?.romanization).filter(Boolean).join(" + ") || "vowel pattern";
+      const finalText = analysis.finalCharacter ? ` + final /${analysis.finalSound}/` : " + open ending";
+      const combined = `${onsetText} + ${vowelText}${finalText}`;
+      const toneFactors = `${analysis.consonantClass ?? "unknown-class"}-class initial, ${analysis.vowelLength ?? "unknown-length"} vowel, ${analysis.codaType ?? "unresolved"} ending, ${analysis.toneMark ? `written ${THAI_CHARACTER_REFERENCE[analysis.toneMark]?.name}` : "no written tone mark"}`;
+      const toneRule = analysis.ruleTone && verifiedTone && analysis.ruleTone === verifiedTone
+        ? `Tone rule: ${toneFactors} → ${analysis.ruleTone} tone. This matches the bundled dictionary reading.`
+        : analysis.ruleTone && verifiedTone
+          ? `Tone rule estimate: ${toneFactors} → ${analysis.ruleTone}, but the bundled reading says ${verifiedTone}; context is not resolved, so the rule is not asserted.`
+          : `The bundled dictionary reading identifies ${verifiedTone ?? dictionary.tone} tone. Tone factors: ${toneFactors}; the spelling rule is not determined reliably here.`;
+      return Object.freeze({
+        spelling,
+        reading: dictionary.reading,
+        tone: verifiedTone ?? dictionary.tone,
+        index: syllableIndex + 1,
+        count: pieces.length,
+        breakdown,
+        combined,
+        toneRule,
+        consonantClass: analysis.consonantClass,
+        vowelLength: analysis.vowelLength,
+        initial: analysis.firstConsonant ? `${THAI_CHARACTER_REFERENCE[analysis.firstConsonant].initial}` : null,
+        final: analysis.finalCharacter ? { character: analysis.finalCharacter, sound: analysis.finalSound, type: analysis.codaType } : null,
+        writtenToneMark: analysis.toneMark,
+      });
+    }
+    start = end;
+  }
+  return null;
+}
+
+export function createThaiCharacterHitAreas(word, label, overlay, onEnter, onLeave, dictionarySyllables = []) {
   const textNode = label.firstChild;
   if (!textNode || textNode.nodeType !== Node.TEXT_NODE) return [];
   const characters = Array.from(word);
@@ -213,9 +397,17 @@ export function createThaiCharacterHitAreas(word, label, overlay, onEnter, onLea
     target.style.top = `${rect.top - labelRect.top}px`;
     target.style.width = `${rect.width}px`;
     target.style.height = `${rect.height}px`;
-    target.addEventListener("mouseenter", () => onEnter(target, describeThaiCharacter(word, characterIndex)));
+    target.addEventListener("mouseenter", () => {
+      const characterInfo = describeThaiCharacter(word, characterIndex);
+      const syllableInfo = describeThaiSyllable(word, characterIndex, dictionarySyllables);
+      onEnter(target, syllableInfo ? Object.freeze({ ...characterInfo, syllableInfo }) : characterInfo);
+    });
     target.addEventListener("mouseleave", onLeave);
-    target.addEventListener("focus", () => onEnter(target, describeThaiCharacter(word, characterIndex)));
+    target.addEventListener("focus", () => {
+      const characterInfo = describeThaiCharacter(word, characterIndex);
+      const syllableInfo = describeThaiSyllable(word, characterIndex, dictionarySyllables);
+      onEnter(target, syllableInfo ? Object.freeze({ ...characterInfo, syllableInfo }) : characterInfo);
+    });
     target.addEventListener("blur", onLeave);
     overlay.append(target);
     targets.push(target);

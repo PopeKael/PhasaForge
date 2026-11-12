@@ -890,6 +890,26 @@ mod tests {
         assert!(senses >= 26_000);
         assert_eq!(tone_count, 1_142);
         assert_eq!(authentic_tone, "falling");
+        let inspector_examples = [
+            ("อาชีพ", "aa-chîip", None),
+            ("ที่นี่", "tîi-nîi", Some("falling-falling")),
+            ("บ้าน", "bâan", Some("falling")),
+            ("กิน", "gin", None),
+            ("ชี้", "chíi", Some("high")),
+            ("ที่", "tîi", Some("falling")),
+            ("นี่", "nîi", Some("falling")),
+        ];
+        for (word, expected_reading, expected_tones) in inspector_examples {
+            let (reading, exact_tones): (String, Option<String>) = db
+                .query_row(
+                    "SELECT w.reading,p.tones FROM words w LEFT JOIN pronunciation_tones p ON p.word=w.word AND p.reading=w.reading WHERE w.word=?1",
+                    [word],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(reading, expected_reading, "dictionary reading for {word}");
+            assert_eq!(exact_tones.as_deref(), expected_tones, "dictionary tones for {word}");
+        }
         let evidence: String = db
             .query_row(
                 "SELECT confidence FROM words WHERE word='เดิน'",

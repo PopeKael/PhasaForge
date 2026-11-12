@@ -415,19 +415,48 @@ function renderWords(words: WordCard[]): void {
       requestAnimationFrame(() => createThaiCharacterHitAreas(word.word, label, hitAreas, (target, info) => {
         if (!info) return;
         thaiCharacterTooltip.replaceChildren();
-        const character = document.createElement("strong"); character.className = "thai-character-tooltip-glyph"; character.lang = "th"; character.textContent = info.character;
-        const name = document.createElement("div"); name.className = "thai-character-tooltip-name"; name.textContent = `${info.name} · ${info.romanization}`;
-        const explanation = document.createElement("div"); explanation.className = "thai-character-tooltip-explanation"; explanation.textContent = info.explanation;
-        thaiCharacterTooltip.append(character, name, explanation);
+        if (info.syllableInfo) {
+          const syllable = info.syllableInfo;
+          const heading = document.createElement("strong"); heading.className = "thai-syllable-tooltip-heading"; heading.lang = "th"; heading.textContent = `Syllable ${syllable.index}/${syllable.count}: ${syllable.spelling}`;
+          const reading = document.createElement("div"); reading.className = "thai-syllable-tooltip-reading"; reading.textContent = `${syllable.reading} · ${syllable.tone} tone`;
+          const breakdown = document.createElement("div"); breakdown.className = "thai-syllable-tooltip-breakdown";
+          for (const part of syllable.breakdown) {
+            const row = document.createElement("div"); row.className = "thai-syllable-tooltip-character";
+            const glyph = document.createElement("span"); glyph.className = "thai-syllable-tooltip-glyph"; glyph.lang = "th"; glyph.textContent = part.character;
+            const name = document.createElement("strong"); name.textContent = `${part.name} · ${part.romanization}`;
+            const role = document.createElement("span"); role.textContent = part.explanation;
+            row.append(glyph, name, role); breakdown.append(row);
+          }
+          const combined = document.createElement("div"); combined.className = "thai-syllable-tooltip-combined"; combined.textContent = `Combined: ${syllable.combined} → ${syllable.reading}, ${syllable.tone} tone.`;
+          const rule = document.createElement("div"); rule.className = "thai-syllable-tooltip-rule"; rule.textContent = syllable.toneRule;
+          thaiCharacterTooltip.append(heading, reading, breakdown, combined, rule);
+        } else {
+          const character = document.createElement("strong"); character.className = "thai-character-tooltip-glyph"; character.lang = "th"; character.textContent = info.character;
+          const name = document.createElement("div"); name.className = "thai-character-tooltip-name"; name.textContent = `${info.name} · ${info.romanization}`;
+          const explanation = document.createElement("div"); explanation.className = "thai-character-tooltip-explanation"; explanation.textContent = info.explanation;
+          thaiCharacterTooltip.append(character, name, explanation);
+        }
         thaiCharacterTooltip.hidden = false;
         const targetRect = target.getBoundingClientRect();
         const tooltipRect = thaiCharacterTooltip.getBoundingClientRect();
-        const left = Math.max(8, Math.min(window.innerWidth - tooltipRect.width - 8, targetRect.left + targetRect.width / 2 - tooltipRect.width / 2));
-        const above = targetRect.top - tooltipRect.height - 7;
-        const top = above >= 8 ? above : Math.min(window.innerHeight - tooltipRect.height - 8, targetRect.bottom + 7);
+        const edge = 8;
+        const right = window.innerWidth - targetRect.right - edge;
+        const leftSpace = targetRect.left - edge;
+        const left = right >= tooltipRect.width + 8
+          ? targetRect.right + 8
+          : leftSpace >= tooltipRect.width + 8
+            ? targetRect.left - tooltipRect.width - 8
+            : Math.max(edge, Math.min(window.innerWidth - tooltipRect.width - edge, targetRect.left + targetRect.width / 2 - tooltipRect.width / 2));
+        const belowSpace = window.innerHeight - targetRect.bottom - edge;
+        const aboveSpace = targetRect.top - edge;
+        const top = belowSpace >= tooltipRect.height + 8
+          ? targetRect.bottom + 8
+          : aboveSpace >= tooltipRect.height + 8
+            ? targetRect.top - tooltipRect.height - 8
+            : Math.max(edge, Math.min(window.innerHeight - tooltipRect.height - edge, targetRect.top + targetRect.height / 2 - tooltipRect.height / 2));
         thaiCharacterTooltip.style.left = `${left}px`;
-        thaiCharacterTooltip.style.top = `${Math.max(8, top)}px`;
-      }, () => { thaiCharacterTooltip.hidden = true; }));
+        thaiCharacterTooltip.style.top = `${top}px`;
+      }, () => { thaiCharacterTooltip.hidden = true; }, word.syllables));
       const details = $("word-details");
       details.replaceChildren();
       const meaning = document.createElement("strong"); meaning.textContent = word.meaning ?? "Meaning not found in the local dictionary";
