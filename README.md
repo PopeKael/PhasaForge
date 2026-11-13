@@ -6,7 +6,7 @@
 
 PhasaForge is a free, Windows desktop companion for studying Thai text. Select text in a supported app, use the keyboard shortcut, and explore the pronunciation, meanings, and sentence structure in a small popup. It is designed for everyday learning, not as a replacement for a full translation service.
 
-> **Release status:** Version **1.0.0 is in private deployment testing** on [`release/1.0.0`](https://github.com/PopeKael/PhasaForge/tree/release/1.0.0). The default `main` branch has not yet been updated to the 1.0.0 release. **No public installer or GitHub release has been published.** Please do not treat repository source archives as Windows installers.
+> **Release status:** The PhasaForge source is available for public inspection as a **pre-release project**. Version **1.0.0 remains in deployment testing** on [`release/1.0.0`](https://github.com/PopeKael/PhasaForge/tree/release/1.0.0). The default `main` branch is not yet the 1.0.0 release. **No 1.0.0 installer or GitHub release has been published.** Repository source archives are not Windows installers.
 
 ## What you can do
 
@@ -28,7 +28,7 @@ For those testing a supplied build, follow the [Windows installation guide](http
 
 The 1.0.0 candidate has passed automated Rust and frontend tests and has been exercised on the developer's installed Windows system, including NSIS reinstall, existing Azure credentials, and Thai playback. **Outstanding release checks** include a live MSI install/uninstall, clean-profile Azure setup, a real Windows sign-in/autostart cycle, and fresh-machine speech prerequisites.
 
-The current state and test limitations are recorded in the [acceptance tests](https://github.com/PopeKael/PhasaForge/blob/release/1.0.0/docs/ACCEPTANCE_TESTS.md). The repository will remain private until the release is ready.
+The current state and test limitations are recorded in the [acceptance tests](https://github.com/PopeKael/PhasaForge/blob/release/1.0.0/docs/ACCEPTANCE_TESTS.md). Public source access is not a declaration that the 1.0.0 installers are release-ready.
 
 ## Documentation
 
