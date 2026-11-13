@@ -31,11 +31,20 @@ async fn synthesize_mms_thai(text: String, steady: bool, app: tauri::AppHandle) 
 }
 
 #[tauri::command]
-async fn prepare_mms_thai(app: tauri::AppHandle) -> Result<(), String> {
+async fn prepare_mms_thai(local_only: bool, app: tauri::AppHandle) -> Result<speech::MmsPrepareTimings, String> {
     let dir = diagnostics::app_data_dir(&app).ok_or_else(|| {
         "Cannot resolve local app-data folder for the Thai voice model".to_string()
     })?;
-    speech::prepare_mms(dir).await
+    let timings = speech::prepare_mms(dir, local_only).await?;
+    let log_path = diagnostics::app_log_path(&app);
+    diagnostics::log(log_path.as_deref(), &format!("mms.prepare load_ms={} warmup_ms={} local_only={local_only}", timings.load_ms, timings.warmup_ms));
+    Ok(timings)
+}
+
+#[tauri::command]
+fn log_mms_playback_latency(latency_ms: u64, app: tauri::AppHandle) {
+    let log_path = diagnostics::app_log_path(&app);
+    diagnostics::log(log_path.as_deref(), &format!("mms.click_to_playing_ms={latency_ms}"));
 }
 
 #[tauri::command]
@@ -76,7 +85,7 @@ pub fn run() {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
             app.manage(practice_history::open(app.handle()).map_err(std::io::Error::other)?);
             let log_path = diagnostics::app_log_path(app.handle());
-            diagnostics::log(log_path.as_deref(), "app.start version=0.6.3");
+            diagnostics::log(log_path.as_deref(), "app.start version=0.6.5");
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
             if !test_mode {
                 if let Err(error) = hotkey::start(app.handle().clone()) {
@@ -112,7 +121,7 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai, prepare_mms_thai,
+        .invoke_handler(tauri::generate_handler![hide_main_window, set_hotkey, list_thai_voices, synthesize_thai, synthesize_mms_thai, prepare_mms_thai, log_mms_playback_latency,
             thai_asr_status, prepare_thai_asr, transcribe_thai_audio,
             practice_history::list_practice_history, practice_history::save_practice_recording, practice_history::update_practice_recording, practice_history::practice_recording_audio, practice_history::clear_practice_history,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,

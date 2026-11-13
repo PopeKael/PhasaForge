@@ -1,5 +1,10 @@
 export const SELECTED_TEXT_HISTORY_KEY = "phasaforge.selected-text-history.v1";
 export const MAX_SELECTED_TEXT_HISTORY = 10;
+export const SELECTED_TEXT_ANALYSIS_VERSION = 2;
+
+export function selectedTextAnalysisNeedsRefresh(entry) {
+  return entry?.status === "processed" && entry.analysis_version !== SELECTED_TEXT_ANALYSIS_VERSION;
+}
 
 export function loadSelectedTextHistory(storage) {
   try {
@@ -28,7 +33,7 @@ export function rememberSelectedText(entries, text, id, recordedAt) {
     };
   }
 
-  const entry = { id, recorded_at: recordedAt, text: value, analysis: [], status: "processing" };
+  const entry = { id, recorded_at: recordedAt, text: value, analysis: [], status: "processing", analysis_version: SELECTED_TEXT_ANALYSIS_VERSION };
   return { entries: [...entries, entry].slice(-MAX_SELECTED_TEXT_HISTORY), entry, created: true };
 }
 

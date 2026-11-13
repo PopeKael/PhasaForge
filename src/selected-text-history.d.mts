@@ -1,12 +1,15 @@
 export const SELECTED_TEXT_HISTORY_KEY: string;
 export const MAX_SELECTED_TEXT_HISTORY: number;
+export const SELECTED_TEXT_ANALYSIS_VERSION: number;
 export interface SelectedTextHistoryEntry<T = unknown> {
   id: string;
   recorded_at: string;
   text: string;
   analysis: T[];
   status: "processing" | "processed" | "analysis_failed";
+  analysis_version?: number;
 }
+export function selectedTextAnalysisNeedsRefresh(entry: SelectedTextHistoryEntry): boolean;
 export function loadSelectedTextHistory<T = unknown>(storage: Pick<Storage, "getItem">): SelectedTextHistoryEntry<T>[];
 export function saveSelectedTextHistory(storage: Pick<Storage, "setItem">, entries: SelectedTextHistoryEntry[]): void;
 export function rememberSelectedText<T = unknown>(entries: SelectedTextHistoryEntry<T>[], text: string, id: string, recordedAt: string): { entries: SelectedTextHistoryEntry<T>[]; entry?: SelectedTextHistoryEntry<T>; created: boolean };

@@ -11,7 +11,7 @@ import wave
 from pathlib import Path
 
 
-def load_model():
+def load_model(local_files_only: bool = False):
     try:
         import numpy as np
         import torch
@@ -20,8 +20,8 @@ def load_model():
         raise RuntimeError("Local Thai TTS requires Python packages torch, transformers, and numpy. See Settings → Thai playback.") from exc
 
     model_name = "facebook/mms-tts-tha"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = VitsModel.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=local_files_only)
+    model = VitsModel.from_pretrained(model_name, local_files_only=local_files_only)
     # Windows ROCm builds have crashed in HIP profiler code on this host. This
     # compact 36M-parameter voice is fast enough on CPU and avoids that native path.
     device = "cpu"
@@ -49,12 +49,12 @@ def synthesize(text: str, output: Path, runtime=None) -> None:
         writer.writeframes(samples.tobytes())
 
 
-def serve() -> None:
+def serve(local_files_only: bool = False) -> None:
     """Keep the model resident and handle newline-delimited requests on stdio."""
     import base64
     import io
 
-    np, torch, tokenizer, model, device = load_model()
+    np, torch, tokenizer, model, device = load_model(local_files_only=local_files_only)
     print('{"ready":true}', flush=True)
     for line in sys.stdin:
         try:
@@ -95,9 +95,9 @@ def serve() -> None:
             print(json.dumps({"error": str(exc)}), flush=True)
 
 
-if __name__ == "__main__" and len(sys.argv) == 2 and sys.argv[1] == "--server":
+if __name__ == "__main__" and sys.argv[1:2] == ["--server"]:
     try:
-        serve()
+        serve(local_files_only="--local-only" in sys.argv[2:])
     except Exception as exc:
         print(f"Thai TTS error: {exc}", file=sys.stderr, flush=True)
         raise SystemExit(1)

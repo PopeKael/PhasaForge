@@ -1,5 +1,31 @@
 # Acceptance record
 
+## Version 0.6.5 development — final accuracy corrections
+
+| Check | Result | Evidence |
+|---|---|---|
+| Thai phrase segmentation | Passed | Rust regression tests analyze both canonical and decomposed Sara Am input for `ห้องน้ำอยู่ที่ไหนครับ` as `ห้องน้ำ`, `อยู่`, `ที่ไหน`, `ครับ`. Unknown fallback uses Thai Character Clusters, keeping tone marks attached. |
+| Tone accuracy and existing history | Passed | Parser now recognizes decomposed combining accents. The standalone refreshed the previously cached 0.6.4 analysis locally and displayed `hɔ̂ɔng · falling tone` and `náam · high tone`; cached translation was reused and no provider request was made. The Thai spelling rules agree with the [NIU SEAsite tone chart](https://seasite.niu.edu/Thai/tones/tonechart.htm): high-class ห + mai tho is falling; low-class น + mai tho is high. |
+| MMS normal/deterministic/context samples | Measured; synthesis unchanged | All samples were generated from the existing model cache with offline flags. At 16 kHz, `น้ำ` was 368 ms normal / 432 ms deterministic; `ห้องน้ำ` was 1,328 / 1,280 ms. Terminal PCM samples were 5–18 counts in magnitude (16-bit scale), with a gradual low-level tail rather than a hard boundary. The isolated bathroom clip begins below −40 dBFS for about 416/408 ms; `ห้องน้ำครับ` reduces this to 95/62 ms but adds spoken content. Space padding did not improve the deterministic sample. Isolated-word prosody/weak onset is the likely cause; it is an inference from the outputs, and subjective pronunciation still needs listening acceptance. WAVs and JSON measurements are staged beside the executable. |
+| Startup warm-up and Ready playback | Passed | Live launch of the final standalone recorded `load_ms=7063`, `warmup_ms=403`, `local_only=true` (about 7.6 s from process start to Ready). The frontend starts preparation asynchronously and the Rust worker uses `spawn_blocking`; the window was available after preparation. WebView `playing` event latency was 497 ms on first `ห้องน้ำ` playback and 329 ms on repeat, both below 2 seconds. This is a playback-event measurement, not electrical loopback capture. |
+| UI and TypeScript/Vite | Passed | Tracked UI suite 31/31. `npm run build` passed TypeScript and Vite production compilation. The package wildcard also picks up pre-existing untracked duplicate `(1)` test files; those user files were left untouched. |
+| Rust | Passed | `cargo test --lib`: 19/19, including segmentation and tone regressions. |
+| Standalone executable | Verified | `npm run tauri build -- --no-bundle` passed. Launched the staged executable directly, no Vite server or installer. `release-artifacts/0.6.5-accuracy/PhasaForge.exe` · 42,324,480 bytes · SHA-256 `7ABD873151686C941221A23ADA80420D73B166D0DE7C420102C299D8D3095129`. |
+| Windows sign-in cycle | Not performed | Manual launch follows the normal startup path. No sign-out/sign-in cycle was run, and the existing optional autostart preference was not changed. |
+
+## Version 0.6.4 development — background MMS voice warm-up
+
+| Check | Result | Evidence |
+|---|---|---|
+| Startup warm-up | Passed | The final rebuilt standalone executable launched directly and automatically prepared the selected cached MMS voice. Its log recorded `load_ms=6986`, `warmup_ms=343`, and `local_only=true`; the live UI changed from Preparing to `Ready · local MMS Thai voice`. |
+| Short-word playback | Passed on the 0.6.4 Ready path | Existing playback telemetry recorded 458 ms from Play to WebView playback start on the first short word and 593 ms on the repeat, below the 2 second target. The final build only adds a guard for Failed preparation; that Ready path is unchanged. A fresh click measurement on the final binary was skipped after the desktop UI detected user input. |
+| Missing model behavior | Passed | Ran the worker with a separate empty Hugging Face cache and `--local-only`; it exited cleanly with the expected missing-cache error and did not emit a ready response. Automatic preparation passes `local_files_only=True` to both model loads. Play also checks the shared preparation result after waiting, so only the explicit Settings → Download + test action can take the download-enabled path. |
+| Resident worker lifetime and voice selection | Source verified | Preparation and synthesis share one process-persistent worker protected by a mutex. Hiding the window only hides it; the worker is stopped on the Tauri process Exit event. Preparation is called only when MMS is selected. |
+| UI tests | Passed | The tracked UI suite passed 29/29 using `node --test --test-concurrency=1` on Git-tracked test files. The package wildcard also discovers four unrelated, pre-existing untracked `(1)` test copies; those files were left untouched, and a prior wildcard run also hit an Edge CDP timeout. |
+| Rust tests | Passed | `cargo test --locked --offline --lib --manifest-path src-tauri/Cargo.toml`: 17/17. The system temp directory was not writable in the sandbox, so `TEMP` and `TMP` were pointed at a unique temporary folder under the project for the passing run; that folder was removed afterward. |
+| Standalone executable | Verified | `npm run tauri build -- --no-bundle` passed and the staged executable was launched directly. Artifact: `release-artifacts/0.6.4-background-mms-warmup/PhasaForge.exe` · 42,287,104 bytes · SHA-256 `AB333CC24BB2969FA77F1574648C42E24605B19B64A219E49F54445B0ABBDC06`. No installer was built. |
+| Windows sign-in startup | Not verified | Manual launch auto-prepared the voice. A full sign-out/sign-in cycle was not performed, and no PhasaForge entry was found in the current user's Run key or Startup folder, so Windows autostart is not currently registered for this account. |
+
 ## Version 0.6.3 development — dictionary-derived syllable alignment
 
 | Check | Result | Evidence |

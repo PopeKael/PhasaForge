@@ -182,9 +182,13 @@ fn analyze_with_db(
     tokenizer: &kham_core::Tokenizer,
     syllable_spellings: &SyllableSpellingIndex,
 ) -> Result<Vec<SentenceCard>, String> {
+    // Kham's zero-copy segmenter expects canonical Thai input. Normalize before
+    // sentence splitting as well as tokenization so decomposed Sara Am and
+    // out-of-order marks cannot strand a vowel/mark in the fallback path.
+    let normalized_text = tokenizer.normalize(text);
     let segmenter = kham_core::sentence::SentenceSegmenter::new();
     let mut cards = Vec::new();
-    for sentence in segmenter.split(text) {
+    for sentence in segmenter.split(&normalized_text) {
         let text = sentence.text.trim().to_string();
         if text.is_empty() {
             continue;
@@ -235,13 +239,15 @@ fn resolve_token(
     if direct.meaning.is_some() {
         return Ok(vec![direct]);
     }
-    let chars: Vec<char> = token.chars().collect();
+    // Fallback matching must use Thai Character Clusters, not Unicode scalar
+    // values. Splitting by char can emit tone/vowel marks as standalone cards.
+    let clusters = kham_core::tcc::tcc_iter(token).collect::<Vec<_>>();
     let mut start = 0;
     let mut output = Vec::new();
-    while start < chars.len() {
+    while start < clusters.len() {
         let mut matched: Option<(usize, WordCard)> = None;
-        for end in (start + 1..=chars.len().min(start + 16)).rev() {
-            let part: String = chars[start..end].iter().collect();
+        for end in (start + 1..=clusters.len().min(start + 16)).rev() {
+            let part = clusters[start..end].concat();
             let card = lookup_word(db, syllable_spellings, &part)?;
             if card.meaning.is_some() {
                 matched = Some((end, card));
@@ -252,7 +258,7 @@ fn resolve_token(
             output.push(card);
             start = end;
         } else {
-            let part = chars[start].to_string();
+            let part = clusters[start].to_string();
             output.push(lookup_word(db, syllable_spellings, &part)?);
             start += 1;
         }
@@ -512,36 +518,18 @@ fn card(
 }
 
 fn tone(syllable: &str) -> &'static str {
-    match syllable.chars().find(|c| {
-        matches!(
-            c,
-            'à' | 'è'
-                | 'ì'
-                | 'ò'
-                | 'ù'
-                | 'â'
-                | 'ê'
-                | 'î'
-                | 'ô'
-                | 'û'
-                | 'á'
-                | 'é'
-                | 'í'
-                | 'ó'
-                | 'ú'
-                | 'ǎ'
-                | 'ě'
-                | 'ǐ'
-                | 'ǒ'
-                | 'ǔ'
-        )
-    }) {
-        Some('à' | 'è' | 'ì' | 'ò' | 'ù') => "low",
-        Some('â' | 'ê' | 'î' | 'ô' | 'û') => "falling",
-        Some('á' | 'é' | 'í' | 'ó' | 'ú') => "high",
-        Some('ǎ' | 'ě' | 'ǐ' | 'ǒ' | 'ǔ') => "rising",
-        _ => "mid",
+    for character in syllable.chars() {
+        match character {
+            // Paiboon readings in the bundled source include both precomposed
+            // Latin letters and base-vowel + combining-mark sequences.
+            'à' | 'è' | 'ì' | 'ò' | 'ù' | '\u{0300}' => return "low",
+            'â' | 'ê' | 'î' | 'ô' | 'û' | '\u{0302}' => return "falling",
+            'á' | 'é' | 'í' | 'ó' | 'ú' | '\u{0301}' => return "high",
+            'ǎ' | 'ě' | 'ǐ' | 'ǒ' | 'ǔ' | '\u{030C}' => return "rising",
+            _ => {}
+        }
     }
+    "mid"
 }
 
 #[tauri::command]
@@ -1020,11 +1008,15 @@ mod tests {
         assert_eq!(azure_character_count("A😀"), 3);
     }
     #[test]
-    fn paiboon_tone_marks_are_mapped_without_guessing() {
+    fn paiboon_tone_marks_support_precomposed_and_decomposed_unicode() {
         assert_eq!(tone("sà"), "low");
         assert_eq!(tone("kâao"), "falling");
         assert_eq!(tone("má"), "high");
         assert_eq!(tone("khǎo"), "rising");
+        assert_eq!(tone("sa\u{0300}"), "low");
+        assert_eq!(tone("hɔ\u{0302}ɔng"), "falling");
+        assert_eq!(tone("n\u{0301}aam"), "high");
+        assert_eq!(tone("khɔ\u{030C}ɔ"), "rising");
         assert_eq!(tone("dee"), "mid");
     }
 
@@ -1369,6 +1361,60 @@ mod tests {
         assert_eq!(
             tokens.iter().map(|t| t.text).collect::<Vec<_>>().concat(),
             input.replace(' ', "")
+        );
+    }
+
+    #[test]
+    fn thai_segmentation_normalizes_input_and_keeps_marks_with_their_cluster() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let word_list = db
+            .prepare("SELECT word FROM words WHERE kind IN ('word','expression')")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .join("\n");
+        let tokenizer = kham_core::Tokenizer::builder().dict_merge(&word_list).build();
+        let index = build_syllable_spelling_index(&db).unwrap();
+        let decomposed = "ห้องน้\u{0E4D}\u{0E32}อยู่ที่ไหนครับ";
+        let expected = ["ห้องน้ำ", "อยู่", "ที่ไหน", "ครับ"];
+        for input in ["ห้องน้ำอยู่ที่ไหนครับ", decomposed] {
+            let analyzed = analyze_with_db(input, &db, &tokenizer, &index).unwrap();
+            assert_eq!(analyzed.len(), 1);
+            let words = analyzed[0]
+                .words
+                .iter()
+                .map(|word| word.word.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(words, expected);
+        }
+
+        // Unknown text still falls back by Thai Character Cluster, so a tone
+        // mark cannot become a separate word when the dictionary has no match.
+        let fallback = resolve_token(&db, &index, "ฃ้ฃ้").unwrap();
+        assert_eq!(
+            fallback.iter().map(|word| word.word.as_str()).collect::<Vec<_>>(),
+            ["ฃ้", "ฃ้"]
+        );
+        assert!(fallback.iter().all(|word| word.word != "้"));
+    }
+
+    #[test]
+    fn bundled_paiboon_tones_match_thai_tone_rules() {
+        let database_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../assets/learner.sqlite");
+        let db = Connection::open(database_path).unwrap();
+        let index = build_syllable_spelling_index(&db).unwrap();
+        let room = lookup_word(&db, &index, "ห้อง").unwrap();
+        let water = lookup_word(&db, &index, "น้ำ").unwrap();
+        let bathroom = lookup_word(&db, &index, "ห้องน้ำ").unwrap();
+
+        assert_eq!(room.syllables[0].tone, "falling");
+        assert_eq!(water.syllables[0].tone, "high");
+        assert_eq!(
+            bathroom.syllables.iter().map(|syllable| syllable.tone).collect::<Vec<_>>(),
+            ["falling", "high"]
         );
     }
     #[test]

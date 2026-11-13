@@ -1,6 +1,6 @@
 # PhasaForge
 
-PhasaForge is a compact Windows Thai study popup. Version 0.6.3 adds dictionary-derived syllable alignment to the offline Thai Character Inspector in the Words tab, including a cautious rule for dictionary-confirmed unwritten short vowels. Selected Text history retains its sentence analysis and translations locally, so switching between saved passages does not repeat provider requests.
+PhasaForge is a compact Windows Thai study popup. Version 0.6.5 normalizes Thai text before segmentation, preserves combining marks within Thai Character Clusters, and reads decomposed Paiboon tone accents correctly. Old saved analyses refresh locally when revisited, preserving cached translations without provider requests. The selected cached MMS voice warms in the background at startup and remains resident while the window is hidden. Selected Text history retains its sentence analysis and translations locally, so switching between saved passages does not repeat provider requests.
 
 ## What 0.4.0 adds
 
@@ -8,7 +8,7 @@ Setup uses `OLLAMA_HOST` and lists model tags found in the configured store or r
 
 ## What 0.4.1 development adds
 
-Setup persists provider, model, voice, playback speed and hotkey selections. New configurations select Meta MMS-TTS Thai; its model is downloaded only when the user explicitly tests that voice. Saved Windows or WebView voice choices remain selected and are reported unavailable if they are missing on the current device. An unready optional voice model does not block the configured app from opening.
+Setup persists provider, model, voice, playback speed and hotkey selections. New configurations select Meta MMS-TTS Thai; when MMS is selected and already cached, startup loads it offline in the background and silently warms first inference. Automatic warm-up never downloads; the explicit Download + test action retains installation behavior. Saved Windows or WebView voice choices remain selected and are reported unavailable if they are missing on the current device. An unready optional voice model does not block the configured app from opening.
 
 Practice keeps the ten newest microphone recordings in local app data, including their original audio, Zipformer transcript, English translation and timestamp. History selection restores the saved take and results without retranscribing or re-translating it. Clearing history also removes its audio files. Practice translation now follows the saved provider choice; Offline examples cannot translate newly spoken sentences.
 
@@ -74,7 +74,7 @@ This Tauri CLI build runs the production frontend step and embeds the configured
 
 Optional local translation: install [Ollama for Windows](https://ollama.com/download/windows). PhasaForge checks for Ollama and installed models at startup, including its configured model directory; it does not start the service or load a model during discovery. Choose Local Ollama to select a model already installed, or type a model tag to download one. The model-name field is blank by default. Use **Test 5 references** to compare local output with bundled ThaiReader examples. On the test PC, the better-performing local 27B model occupies about 10.9 GB on disk; the Qwen 4B/9B alternatives used less storage but mistranslated an unfamiliar ingredient. Runtime memory depends on Ollama and available hardware.
 
-**Settings → Download + test local Thai voice** prepares and tests the local MMS voice. It uses CPU inference and stores the model under PhasaForge app data. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; set `PHASAFORGE_PYTHON` if Python is not on PATH. Windows and WebView Thai voices are retained as alternatives. English substitution is disabled.
+**Settings → Download + test local Thai voice** explicitly prepares and tests the local MMS voice. It uses CPU inference and stores the model under PhasaForge app data. Requires Python 3.10+ with `torch`, `transformers`, and `numpy`; set `PHASAFORGE_PYTHON` if Python is not on PATH. Windows and WebView Thai voices are retained as alternatives. English substitution is disabled.
 
 ## Data and licensing
 

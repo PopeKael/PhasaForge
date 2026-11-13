@@ -1,5 +1,20 @@
 # Changelog
 
+# 0.6.5 — Thai segmentation, tone parsing and MMS audio accuracy
+
+- Normalize Thai Unicode before sentence and word segmentation, and keep unknown-word fallback on Thai Character Cluster boundaries.
+- Parse both precomposed and decomposed Paiboon tone marks so bundled dictionary readings retain their tone.
+- Refresh old saved sentence analysis locally when it is revisited, preserving cached translations without provider calls.
+- Record MMS Play latency on the WebView audio `playing` event; keep the 0.6.4 local-only warm-up and persistent worker.
+- Compare normal, deterministic and contextual MMS WAVs; no synthesis setting was changed because the isolated clips taper to near-zero samples instead of ending abruptly.
+
+# 0.6.4 — Background MMS voice warm-up
+
+- Prepare the selected MMS voice in the background at startup only from the app's existing model cache; automatic preparation is local-only and never downloads.
+- Run and discard one short Thai inference after model loading, keeping the persistent worker resident until the app exits.
+- Show Preparing, Ready, or Failed voice status and serialize Play requests with warm-up.
+- Log model load time, first-inference warm-up time, and Play-click to audio `playing` event latency.
+
 # 0.6.3 — Dictionary-derived syllable alignment
 
 - Build syllable spelling boundaries from the bundled single-syllable dictionary index and accept only unique complete matches.

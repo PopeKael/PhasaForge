@@ -8,7 +8,7 @@ import { applyAutoStartPreference } from "./autostart-state.mjs";
 import { lessonViewState } from "./view-state.mjs";
 import { captureNotice, capturedSourceText } from "./capture-state.mjs";
 import { isConfigured, loadSettings, MMS_VOICE, persistSettings, SETTINGS_KEY } from "./configuration-state.mjs";
-import { loadSelectedTextHistory, nextSelectedTextIndex, previousSelectedTextIndex, rememberSelectedText, saveSelectedTextHistory, selectedTextIndex as findSelectedTextIndex, shouldAutoTranslateSelectedText } from "./selected-text-history.mjs";
+import { loadSelectedTextHistory, nextSelectedTextIndex, previousSelectedTextIndex, rememberSelectedText, saveSelectedTextHistory, selectedTextAnalysisNeedsRefresh, SELECTED_TEXT_ANALYSIS_VERSION, selectedTextIndex as findSelectedTextIndex, shouldAutoTranslateSelectedText } from "./selected-text-history.mjs";
 import { createThaiCharacterHitAreas } from "./thai-character-inspector.mjs";
 import "./style.css";
 
@@ -30,6 +30,8 @@ let currentAutoStartEnabled = false;
 let nativeThaiVoices: { id: string; name: string; language: string }[] = [];
 let nativeVoiceDiscoveryComplete = false;
 let selectedVoiceReady = false;
+let mmsVoiceState: "idle" | "preparing" | "ready" | "failed" = "idle";
+let mmsPreparation: Promise<void> | undefined;
 let readiness: { voiceReady: boolean | null; azureKeyConfigured: boolean | null; ollamaServiceAvailable: boolean | null; ollamaModelAvailable: boolean | null; ollamaModelLoaded: boolean | null } = { voiceReady: null, azureKeyConfigured: null, ollamaServiceAvailable: null, ollamaModelAvailable: null, ollamaModelLoaded: null };
 let ttsAudioUrl: string | undefined;
 let speechPlaying = false;
@@ -66,7 +68,7 @@ type Settings = { speed: number; voice: string; voiceConfigured: boolean; hotkey
 type OllamaRunningModel = { name: string; size: number; size_vram: number };
 type OllamaDiscovery = { installed: boolean; executable: string | null; service_available: boolean; model_store_found: boolean; model_directory: string; endpoint: string; models: string[]; api_models: string[]; manifest_models: string[]; running_models: OllamaRunningModel[] };
 type PracticeRecording = { id: string; recorded_at: string; mime_type: string; thai_text: string; english_text: string; status: string };
-type SelectedTextHistoryEntry<T> = { id: string; recorded_at: string; text: string; analysis: T[]; status: "processing" | "processed" | "analysis_failed" };
+type SelectedTextHistoryEntry<T> = { id: string; recorded_at: string; text: string; analysis: T[]; status: "processing" | "processed" | "analysis_failed"; analysis_version?: number };
 type WordCard = { word: string; reading: string | null; syllables: { reading: string; tone: string; spelling: string | null }[]; meaning: string | null; note: string | null; source: string | null; confidence: string | null; example_thai: string | null; example_english: string | null };
 type SentenceCard = { text: string; reading: string; meaning: string | null; meaning_source: string | null; words: WordCard[] };
 
@@ -196,7 +198,7 @@ function updateConfigurationStatus(): void {
             : readiness.ollamaModelLoaded === true ? `Ready · ${settings.translationModel} loaded` : `Available · ${settings.translationModel} is not loaded; Save to load it`;
   const voiceOption = $<HTMLSelectElement>("voice-select").selectedOptions[0];
   const voiceName = settings.voice === MMS_VOICE ? "Meta MMS-TTS Thai" : voiceOption?.textContent?.trim() || settings.voice || "No Thai voice selected";
-  const voiceStatus = readiness.voiceReady === true ? "Ready" : settings.voice === MMS_VOICE ? "Not prepared · optional model" : "Unavailable";
+  const voiceStatus = readiness.voiceReady === true ? "Ready" : settings.voice === MMS_VOICE ? mmsVoiceState === "preparing" ? "Preparing" : mmsVoiceState === "failed" ? "Failed" : "Not prepared · optional model" : "Unavailable";
   const asrStatus = thaiAsrReady ? "Thai Zipformer ready" : "Thai Zipformer not prepared yet";
   $("configuration-summary").textContent = `${providerName}: ${providerStatus}\nTranslation model: ${provider === "ollama" ? settings.translationModel || "none selected" : provider === "azure" ? "Azure F0" : "not used"}\nSpeech voice: ${voiceName} · ${voiceStatus}\nSpeech recognition: sherpa-onnx Thai Zipformer · ${asrStatus}`;
 }
@@ -265,6 +267,35 @@ function restoreSelectedTextHistory(index: number): void {
   renderSelectedTextHistoryControls();
 }
 
+function restoreSelectedTextHistoryAndRefresh(index: number): void {
+  const entry = selectedTextHistory[index];
+  restoreSelectedTextHistory(index);
+  if (!entry || !selectedTextAnalysisNeedsRefresh(entry) || !("__TAURI_INTERNALS__" in window)) return;
+
+  const request = ++analysisRequest;
+  const priorTranslations = new Map(entry.analysis
+    .filter(card => card.meaning && !card.meaning_source?.startsWith("ThaiReader"))
+    .map(card => [card.text, { meaning: card.meaning, meaning_source: card.meaning_source }]));
+  $("capture-status").textContent = "Refreshing saved word data locally; existing translations are being reused.";
+  void invoke<SentenceCard[]>("analyze_text", { text: entry.text }).then(cards => {
+    for (const card of cards) Object.assign(card, priorTranslations.get(card.text) ?? {});
+    entry.analysis = cards;
+    entry.analysis_version = SELECTED_TEXT_ANALYSIS_VERSION;
+    persistSelectedTextHistory();
+    if (selectedTextHistoryId !== entry.id || request !== analysisRequest) return;
+    analysis = cards;
+    sentences = cards.map(card => card.text);
+    sentenceIndex = Math.min(sentenceIndex, Math.max(0, cards.length - 1));
+    renderSentence(cards[sentenceIndex]);
+    $("capture-status").textContent = "Saved word data refreshed locally · existing translations reused · no provider request.";
+    $("translation-status").textContent = "Saved sentence results restored without provider requests.";
+  }).catch(error => {
+    if (selectedTextHistoryId === entry.id && request === analysisRequest) {
+      $("capture-status").textContent = `Local refresh of saved word data failed: ${String(error)}`;
+    }
+  });
+}
+
 function rememberAndProcessSelectedText(rawText: string, migratingLegacyText = false): void {
   clearTimeout(sourceEditTimer);
   const text = rawText.trim();
@@ -287,7 +318,7 @@ function rememberAndProcessSelectedText(rawText: string, migratingLegacyText = f
   selectedTextHistory = remembered.entries;
   selectedTextHistoryIndex = findSelectedTextIndex(selectedTextHistory, remembered.entry!.id);
   persistSelectedTextHistory();
-  restoreSelectedTextHistory(selectedTextHistoryIndex);
+  restoreSelectedTextHistoryAndRefresh(selectedTextHistoryIndex);
   if (!remembered.created) return;
 
   const entry = remembered.entry!;
@@ -304,6 +335,7 @@ function rememberAndProcessSelectedText(rawText: string, migratingLegacyText = f
     if (!selectedTextHistory.some(saved => saved.id === entry.id)) return;
     entry.analysis = cards;
     entry.status = "processed";
+    entry.analysis_version = SELECTED_TEXT_ANALYSIS_VERSION;
     persistSelectedTextHistory();
     if (selectedTextHistoryId === entry.id && request === analysisRequest) {
       analysis = cards;
@@ -346,6 +378,7 @@ async function refreshCurrentTextAnalysis(): Promise<void> {
     for (const card of cards) Object.assign(card, priorTranslations.get(card.text) ?? {});
     entry.analysis = cards;
     entry.status = "processed";
+    entry.analysis_version = SELECTED_TEXT_ANALYSIS_VERSION;
     persistSelectedTextHistory();
     if (selectedTextHistoryId === entry.id && request === analysisRequest) {
       analysis = cards;
@@ -493,18 +526,61 @@ function updateVoiceOptions(): void {
   select.value = settings.voice;
   persistSettings(localStorage, settings);
   const activeNative = nativeThaiVoices.find(v => "winrt:" + v.id === settings.voice);
-  $("voice-note").textContent = activeNative ? "Windows Thai voice ready: " + activeNative.name : settings.voice === MMS_VOICE ? "Local MMS Thai voice is available; choose Download + test to prepare its model." : "Thai WebView voice ready: " + settings.voice.slice(4);
-  selectedVoiceReady = settings.voice === MMS_VOICE ? false : values.includes(settings.voice);
+  if (settings.voice === MMS_VOICE) {
+    if (mmsVoiceState === "ready") {
+      selectedVoiceReady = true;
+      $("voice-note").textContent = "Ready · local MMS Thai voice";
+    } else if (mmsVoiceState === "preparing") {
+      selectedVoiceReady = false;
+      $("voice-note").textContent = "Preparing · local MMS Thai voice";
+    } else if ("__TAURI_INTERNALS__" in window) {
+      void prepareSelectedMmsVoice();
+    } else {
+      $("voice-note").textContent = "Failed · local MMS voice is available in the desktop app";
+    }
+  } else {
+    $("voice-note").textContent = activeNative ? "Windows Thai voice ready: " + activeNative.name : "Thai WebView voice ready: " + settings.voice.slice(4);
+    selectedVoiceReady = values.includes(settings.voice);
+  }
   readiness.voiceReady = selectedVoiceReady ? true : nativeVoiceDiscoveryComplete ? false : null;
   reconcileInitialSetup();
 }
 
-function playSynthesized(bytes: number[], description: string): void {
+function prepareSelectedMmsVoice(): Promise<void> {
+  if (settings.voice !== MMS_VOICE || !("__TAURI_INTERNALS__" in window)) return Promise.resolve();
+  if (mmsVoiceState === "ready") return Promise.resolve();
+  if (mmsPreparation) return mmsPreparation;
+  mmsVoiceState = "preparing";
+  selectedVoiceReady = false;
+  readiness.voiceReady = null;
+  $("voice-note").textContent = "Preparing · local MMS Thai voice";
+  updateConfigurationStatus();
+  reconcileInitialSetup();
+  mmsPreparation = invoke("prepare_mms_thai", { localOnly: true }).then(() => {
+    mmsVoiceState = "ready";
+    selectedVoiceReady = settings.voice === MMS_VOICE;
+    readiness.voiceReady = selectedVoiceReady;
+    if (settings.voice === MMS_VOICE) $("voice-note").textContent = "Ready · local MMS Thai voice";
+    updateConfigurationStatus();
+    reconcileInitialSetup();
+  }).catch(error => {
+    mmsVoiceState = "failed";
+    selectedVoiceReady = false;
+    readiness.voiceReady = false;
+    if (settings.voice === MMS_VOICE) $("voice-note").textContent = `Failed · MMS is not cached or could not prepare: ${String(error)}`;
+    updateConfigurationStatus();
+    reconcileInitialSetup();
+  });
+  return mmsPreparation;
+}
+
+function playSynthesized(bytes: number[], description: string, onPlaybackStarted?: () => void): void {
   const blob = new Blob([new Uint8Array(bytes)], { type: "audio/wav" });
   if (ttsAudioUrl) URL.revokeObjectURL(ttsAudioUrl);
   ttsAudioUrl = URL.createObjectURL(blob);
   ttsAudio.src = ttsAudioUrl;
   ttsAudio.playbackRate = Number(speed.value);
+  if (onPlaybackStarted) ttsAudio.addEventListener("playing", onPlaybackStarted, { once: true });
   void ttsAudio.play().then(() => {
     $("voice-note").textContent = description;
     $("stop-speech").removeAttribute("disabled");
@@ -514,7 +590,7 @@ function playSynthesized(bytes: number[], description: string): void {
   });
 }
 
-function speak(text: string, steady = false): void {
+function speak(text: string, steady = false, allowMmsInstall = false): void {
   if (!text.trim()) { $("voice-note").textContent = "Add Thai text before playing."; return; }
   if (mediaRecorder?.state === "recording") { $("voice-note").textContent = "Stop microphone recording before playing speech."; return; }
   if (settings.voice.startsWith("winrt:")) {
@@ -533,21 +609,37 @@ function speak(text: string, steady = false): void {
     return;
   }
   if (settings.voice === MMS_VOICE) {
+    if (mmsVoiceState === "failed" && !allowMmsInstall) {
+      $("voice-note").textContent = "Failed · MMS is not cached or could not prepare. Use Download + test local Thai voice in Settings to install it.";
+      return;
+    }
+    const clickedAt = performance.now();
     speechPlaying = true;
     setRecordingControls(false, false);
     window.speechSynthesis?.cancel();
     ttsAudio.pause();
-    $("voice-note").textContent = "Generating local Thai speech with MMS on CPU. First use downloads the optional model.";
-    void invoke<number[]>("synthesize_mms_thai", { text, steady }).then(bytes => {
+    $("voice-note").textContent = mmsVoiceState === "preparing" ? "Preparing · local MMS Thai voice" : "Generating local Thai speech with MMS on CPU…";
+    void (async () => {
+      if (mmsPreparation) await mmsPreparation;
+      if (mmsVoiceState === "failed" && !allowMmsInstall) {
+        $("voice-note").textContent = "Failed · MMS is not cached or could not prepare. Use Download + test local Thai voice in Settings to install it.";
+        finishSpeech();
+        return;
+      }
+      const bytes = await invoke<number[]>("synthesize_mms_thai", { text, steady });
       selectedVoiceReady = true;
+      mmsVoiceState = "ready";
       readiness.voiceReady = true;
       updateConfigurationStatus();
-      playSynthesized(bytes, "Playing generated local MMS Thai speech (CPU). The text stayed on this PC.");
-    }).catch(error => {
+      playSynthesized(bytes, "Playing generated local MMS Thai speech (CPU). The text stayed on this PC.", () => {
+        void invoke("log_mms_playback_latency", { latencyMs: Math.max(0, Math.round(performance.now() - clickedAt)) });
+      });
+    })().catch(error => {
       selectedVoiceReady = false;
+      mmsVoiceState = "failed";
       readiness.voiceReady = false;
       updateConfigurationStatus();
-      $("voice-note").textContent = "Local Thai speech failed: " + String(error);
+      $("voice-note").textContent = "Failed · local Thai speech: " + String(error);
       finishSpeech();
     });
     return;
@@ -611,7 +703,7 @@ $<HTMLSelectElement>("hotkey-key").value = settings.hotkeyKey;
 renderShortcut();
 const savedTextIndex = selectedTextHistory.findIndex(entry => entry.text === source.value.trim());
 if (savedTextIndex >= 0) {
-  restoreSelectedTextHistory(savedTextIndex);
+  restoreSelectedTextHistoryAndRefresh(savedTextIndex);
 } else if (source.value.trim()) {
   rememberAndProcessSelectedText(source.value, true);
 } else {
@@ -647,8 +739,8 @@ $("stop-speech").addEventListener("click", () => {
 });
 $("previous").addEventListener("click", () => { sentenceIndex = Math.max(0, sentenceIndex - 1); renderSentence(analysis[sentenceIndex]); });
 $("next").addEventListener("click", () => { sentenceIndex = Math.min(analysis.length - 1, sentenceIndex + 1); renderSentence(analysis[sentenceIndex]); });
-$("selected-history-previous").addEventListener("click", () => restoreSelectedTextHistory(previousSelectedTextIndex(selectedTextHistoryIndex, selectedTextHistory.length)));
-$("selected-history-next").addEventListener("click", () => restoreSelectedTextHistory(nextSelectedTextIndex(selectedTextHistoryIndex, selectedTextHistory.length)));
+$("selected-history-previous").addEventListener("click", () => restoreSelectedTextHistoryAndRefresh(previousSelectedTextIndex(selectedTextHistoryIndex, selectedTextHistory.length)));
+$("selected-history-next").addEventListener("click", () => restoreSelectedTextHistoryAndRefresh(nextSelectedTextIndex(selectedTextHistoryIndex, selectedTextHistory.length)));
 $("clear-selected-history").addEventListener("click", () => {
   if (!selectedTextHistory.length || !window.confirm("Clear all saved selected-text history and cached sentence results on this device?")) return;
   selectedTextHistory = [];
@@ -712,9 +804,11 @@ $<HTMLSelectElement>("translation-model").addEventListener("change", event => {
 $<HTMLSelectElement>("voice-select").addEventListener("change", event => {
   settings.voice = (event.currentTarget as HTMLSelectElement).value;
   settings.voiceConfigured = true;
-  selectedVoiceReady = settings.voice !== MMS_VOICE;
+  selectedVoiceReady = settings.voice === MMS_VOICE ? mmsVoiceState === "ready" : true;
   readiness.voiceReady = selectedVoiceReady;
   persistSettings(localStorage, settings);
+  if (settings.voice === MMS_VOICE) void prepareSelectedMmsVoice();
+  else $("voice-note").textContent = settings.voice.startsWith("winrt:") ? "Preparing selected Windows Thai voice…" : "Thai WebView voice selected.";
   reconcileInitialSetup();
 });
 $("refresh-models").addEventListener("click", () => { void refreshOllamaModels(); });
@@ -735,7 +829,7 @@ $("install-mms-voice").addEventListener("click", () => {
   persistSettings(localStorage, settings);
   selectedVoiceReady = false;
   readiness.voiceReady = false;
-  speak("สวัสดีครับ วันนี้อากาศดี");
+  speak("สวัสดีครับ วันนี้อากาศดี", false, true);
 });
 $("open-mic-test").addEventListener("click", () => showTab("practice"));
 $("pull-model").addEventListener("click", async () => {

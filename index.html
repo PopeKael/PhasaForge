@@ -15,7 +15,7 @@
           <span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd>
           <span class="titlebar-separator">|</span>
           <span class="titlebar-hint">Opens near your selection and stays on-screen</span>
-          <span class="version">v0.6.3</span>
+          <span class="version">v0.6.5</span>
         </div>
         <div class="window-actions">
           <button id="settings-toggle" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
@@ -47,7 +47,7 @@
             </div>
             <div class="speed-head"><span>Thai Speech Speed</span><output id="speed-output">0.75×</output></div>
             <div class="speed-row"><span>Slow</span><input id="speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /><span>Fast</span></div>
-            <div class="audio-note" id="voice-note">Checking for an installed Thai voice…</div>
+            <div class="audio-note" id="voice-note">Checking Thai voice status…</div>
           </div>
         </section>
 
@@ -150,7 +150,7 @@
           <label class="setting-row"><span class="setting-label">Thai voice <button class="help-tip" type="button" title="Choose an installed Windows/WebView Thai voice, or the optional local MMS voice." aria-label="Thai voice help">?</button></span><select id="voice-select"><option value="">No Thai voice detected</option></select></label>
           <button id="test-voice" class="secondary-button small">Test selected Thai voice</button>
           <button id="install-mms-voice" class="secondary-button small">Download + test local Thai voice</button>
-          <p class="muted" id="voice-setup-note">Local MMS Thai speech runs on CPU; first use downloads the optional model to app data. Requires Python 3.10+ with torch, transformers, and numpy. Model license: CC BY-NC 4.0 (non-commercial use only). Text stays on this PC.</p>
+          <p class="muted" id="voice-setup-note">When selected, cached MMS prepares offline in the background at startup. Download + test explicitly installs a missing model. MMS runs on CPU and requires Python 3.10+ with torch, transformers, and numpy. Model license: CC BY-NC 4.0 (non-commercial use only). Text stays on this PC.</p>
           <label class="setting-row"><span class="setting-label">Thai playback speed <button class="help-tip" type="button" title="Adjust playback speed. Slower playback can make it easier to hear syllables." aria-label="Playback speed help">?</button></span><input id="settings-speed" type="range" min="0.5" max="1" step="0.05" value="0.75" /></label>
           <h3>Speech recognition</h3>
           <p class="setup-instruction">Practice prepares this separate Thai speech model automatically the first time you stop a recording. You can download it here in advance instead. Requires Python 3.10+ and internet; your recorded audio is kept and transcribed after setup.</p>

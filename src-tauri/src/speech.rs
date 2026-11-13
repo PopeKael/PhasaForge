@@ -5,6 +5,7 @@ use std::{
     path::PathBuf,
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{Mutex, OnceLock},
+    time::Instant,
 };
 use windows::core::HSTRING;
 use windows::Media::SpeechSynthesis::SpeechSynthesizer;
@@ -18,6 +19,13 @@ struct MmsWorker {
     child: Child,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
+    warmed: bool,
+}
+
+#[derive(Serialize)]
+pub struct MmsPrepareTimings {
+    pub load_ms: u128,
+    pub warmup_ms: u128,
 }
 
 impl Drop for MmsWorker {
@@ -28,7 +36,7 @@ impl Drop for MmsWorker {
 }
 
 impl MmsWorker {
-    fn start(data_dir: &PathBuf) -> Result<Self, String> {
+    fn start(data_dir: &PathBuf, local_only: bool) -> Result<Self, String> {
         std::fs::create_dir_all(data_dir).map_err(|e| format!("Cannot create Thai voice cache: {e}"))?;
         let helper = data_dir.join("phasaforge-mms-tts.py");
         std::fs::write(&helper, MMS_HELPER).map_err(|e| format!("Cannot prepare the Thai voice helper: {e}"))?;
@@ -40,7 +48,9 @@ impl MmsWorker {
         let hub = cache.join("hub");
         let xet = cache.join("xet");
         let mut command = Command::new(std::env::var_os("PHASAFORGE_PYTHON").unwrap_or_else(|| "python".into()));
-        command.arg("-u").arg(&helper).arg("--server")
+        command.arg("-u").arg(&helper).arg("--server");
+        if local_only { command.arg("--local-only"); }
+        command
             .env("HF_HOME", &cache).env("HF_HUB_CACHE", &hub).env("HF_XET_CACHE", &xet)
             .env("TRANSFORMERS_CACHE", &hub).env("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
             .env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8")
@@ -53,7 +63,7 @@ impl MmsWorker {
         let mut child = command.spawn().map_err(|e| format!("Cannot start local Thai TTS. Install Python 3.10+ with torch, transformers, and numpy, or set PHASAFORGE_PYTHON: {e}"))?;
         let input = child.stdin.take().ok_or("Could not open the Thai voice worker input.")?;
         let stdout = child.stdout.take().ok_or("Could not open the Thai voice worker output.")?;
-        let mut worker = Self { child, input, output: BufReader::new(stdout) };
+        let mut worker = Self { child, input, output: BufReader::new(stdout), warmed: false };
         let mut ready = String::new();
         worker.output.read_line(&mut ready).map_err(|e| format!("Could not initialize local Thai speech: {e}"))?;
         if !ready.contains("\"ready\": true") && !ready.contains("\"ready\":true") {
@@ -80,15 +90,25 @@ impl MmsWorker {
     }
 }
 
-fn ensure_mms_worker(data_dir: PathBuf) -> Result<(), String> {
-    let worker_mutex = MMS_WORKER.get_or_init(|| Mutex::new(None));
-    let mut worker = worker_mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-    if worker.is_none() { *worker = Some(MmsWorker::start(&data_dir)?); }
-    Ok(())
-}
-
-pub async fn prepare_mms(data_dir: PathBuf) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || ensure_mms_worker(data_dir)).await.map_err(|e| e.to_string())?
+pub async fn prepare_mms(data_dir: PathBuf, local_only: bool) -> Result<MmsPrepareTimings, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let started = Instant::now();
+        let worker_mutex = MMS_WORKER.get_or_init(|| Mutex::new(None));
+        let mut worker = worker_mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let load_ms = if worker.is_none() {
+            *worker = Some(MmsWorker::start(&data_dir, local_only)?);
+            started.elapsed().as_millis()
+        } else { 0 };
+        let worker = worker.as_mut().expect("worker initialized");
+        let warmup_started = Instant::now();
+        if !worker.warmed {
+            // Run real inference once but discard the returned WAV. This request stays
+            // inside the resident worker and is serialized with any concurrent Play.
+            worker.synthesize("สวัสดี", true)?;
+            worker.warmed = true;
+        }
+        Ok(MmsPrepareTimings { load_ms, warmup_ms: warmup_started.elapsed().as_millis() })
+    }).await.map_err(|e| e.to_string())?
 }
 
 pub fn stop_mms_worker() {
@@ -151,7 +171,7 @@ pub async fn synthesize_mms(text: String, data_dir: PathBuf, steady: bool) -> Re
         }
         let worker_mutex = MMS_WORKER.get_or_init(|| Mutex::new(None));
         let mut worker = worker_mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if worker.is_none() { *worker = Some(MmsWorker::start(&data_dir)?); }
+        if worker.is_none() { *worker = Some(MmsWorker::start(&data_dir, false)?); }
         match worker.as_mut().expect("worker initialized").synthesize(&text, steady) {
             Ok(bytes) => Ok(bytes),
             Err(error) => { *worker = None; Err(error) }
