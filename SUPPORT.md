@@ -2,7 +2,7 @@
 
 PhasaForge is free to use. No payment, subscription, cloud account, or login is required.
 
-Until PhasaForge has its own public issue tracker, use [Wazza Garage issues](https://github.com/PopeKael/wazza-garage/issues) for bug reports and feature suggestions. Prefix the issue title with `PhasaForge:`.
+Report bugs and suggest improvements in the [PhasaForge issue tracker](https://github.com/PopeKael/PhasaForge/issues). Please check existing issues before opening a new one.
 
 Please include:
 
