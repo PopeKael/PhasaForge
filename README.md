@@ -1,59 +1,57 @@
+<img src="assets/phasa-forge-master.png" alt="PhasaForge logo" width="104" align="right">
+
 # PhasaForge
 
-PhasaForge is a compact Windows app for studying Thai text. It turns a selected or pasted passage into sentence and word cards with learner readings, meanings, examples, and optional Thai speech.
+**Learn Thai from the words in front of you.**
 
-**Version 1.0.0 is a deployment-testing release.** It carries the accepted 0.6.5 segmentation, tone-parsing, and playback corrections. Installation and known limitations are documented in the [Windows guide](docs/INSTALLATION.md) and [acceptance record](docs/ACCEPTANCE_TESTS.md). Release changes are listed in the [changelog](CHANGELOG.md).
+PhasaForge is a free, Windows desktop companion for studying Thai text. Select text in a supported app, use the keyboard shortcut, and explore the pronunciation, meanings, and sentence structure in a small popup. It is designed for everyday learning, not as a replacement for a full translation service.
 
-## What it does
+> **Release status:** Version **1.0.0 is in private deployment testing** on [`release/1.0.0`](https://github.com/PopeKael/PhasaForge/tree/release/1.0.0). The default `main` branch has not yet been updated to the 1.0.0 release. **No public installer or GitHub release has been published.** Please do not treat repository source archives as Windows installers.
 
-- Capture a selection with the configured Windows shortcut or paste Thai text into the popup.
-- Split Thai passages into sentences and words, then show dictionary meanings, learner readings, source notes, examples, and tone information when the spelling can be analyzed reliably.
-- Translate new sentences with the user's Azure Translator resource or a local Ollama model. Offline mode uses the bundled dictionary and examples without network access.
-- Play Thai through an installed Windows or WebView voice, or the optional local Meta MMS-TTS model.
-- Record and replay short passages. Optional Thai speech recognition transcribes after recording stops.
-- Keep settings, saved passages, translations, corrections, recordings, and optional models in the Windows user's local application data.
+## What you can do
 
-## Installation and first run
+- **Read Thai:** Inspect words and sentences, learner romanization, dictionary meanings, examples, and tone details where the spelling permits a reliable analysis.
+- **Capture a selection:** Open the movable popup using the configured shortcut (default **Right Ctrl + Up**) or paste text directly.
+- **Hear Thai:** Use a Windows/WebView Thai voice, or optionally prepare a local Meta MMS-TTS voice.
+- **Translate when needed:** Work offline with bundled dictionary examples, connect your own Microsoft Azure Translator resource, or use a local Ollama model.
+- **Practise:** Record, replay, and optionally transcribe short spoken passages. Live transcription and pronunciation scoring are not included.
 
-Use the supplied NSIS installer or MSI, and verify its SHA-256 against the accompanying `SHA256SUMS.txt` before running it. The standalone executable is available for evaluation without installing. Obtain the verified files from the release location provided to you; do not assume an artifact is available until it has been published.
+## Installation
 
-PhasaForge requires Windows 10 or 11 x64 and the Microsoft Edge WebView2 Runtime. The installers include the app and offline Thai dictionary, but **do not bundle Python, PyTorch, the MMS speech model, or the optional speech-recognition model**.
+PhasaForge targets **Windows 10/11 x64** and requires **Microsoft Edge WebView2 Runtime**. The release candidate produces NSIS and MSI installers plus a standalone executable, but distribution is on hold until clean-machine acceptance is complete.
 
-For Thai translation, choose one of these in Settings:
+For those testing a supplied build, follow the [Windows installation guide](https://github.com/PopeKael/PhasaForge/blob/release/1.0.0/docs/INSTALLATION.md) and verify its checksum before installation.
 
-- **Azure Translator:** Use your own Translator resource. Enter its key and exact resource region. Both values are stored in Windows Credential Manager for that Windows account. A blank region is valid only for a global Translator resource. New Azure translation requests send Thai text to Microsoft.
-- **Offline:** Uses bundled dictionary entries and attributed examples. It does not translate new sentences and makes no network requests.
-- **Local Ollama:** Requires Ollama running with a model installed on this PC. Requests go to the local Ollama service; downloading a model is an explicit action.
+**Optional components are not bundled:** local MMS speech requires Python 3.10+ and compatible PyTorch/Transformers/NumPy packages plus its separately downloaded model. Local speech recognition and Ollama models also require additional setup. Azure translation needs your own resource and may incur charges under your plan. Offline dictionary lookup does not need an internet connection.
 
-For Thai speech, cached MMS starts in the background when selected. Automatic preparation is local-only and never downloads a model. If the model is missing, install it explicitly in Settings after providing Python 3.10 or later with compatible `torch`, `transformers`, and `numpy` packages. MMS runs on the CPU and its model license is CC BY-NC 4.0, which limits commercial use. See the [installation guide](docs/INSTALLATION.md) before choosing a provider.
+## Project status
 
-## Known limitations
+The 1.0.0 candidate has passed automated Rust and frontend tests and has been exercised on the developer's installed Windows system, including NSIS reinstall, existing Azure credentials, and Thai playback. **Outstanding release checks** include a live MSI install/uninstall, clean-profile Azure setup, a real Windows sign-in/autostart cycle, and fresh-machine speech prerequisites.
 
-- Dictionary coverage and sense quality are incomplete. Unsupported or ambiguous Thai syllable boundaries retain a conservative fallback instead of a guessed breakdown.
-- Azure and Ollama translations can be wrong; compare them with the supplied reference and examples.
-- MMS speech can sound weak at the start of isolated short words. Sentence context improves the onset. It remains under review for listening quality.
-- Azure translation has been verified only with an already-configured Windows account; first-run setup and credential isolation still need a clean Windows profile test.
-- Optional Thai recognition is a separate local install and transcribes after Stop; it does not provide live words or pronunciation scores.
-- The signed-update configuration is groundwork only. Version 1.0.0 does not check for or install updates. The 1.0.0 to 1.0.1 cycle still needs a reachable manifest, verified signing, and an installed-update test. See [UPDATES.md](docs/UPDATES.md).
+The current state and test limitations are recorded in the [acceptance tests](https://github.com/PopeKael/PhasaForge/blob/release/1.0.0/docs/ACCEPTANCE_TESTS.md). The repository will remain private until the release is ready.
 
-## Build and test
+## Documentation
 
-Build prerequisites and packaging steps are in [BUILD_AND_RELEASE.md](docs/BUILD_AND_RELEASE.md). Typical development commands on Windows are:
+- [Installation and first-run setup](https://github.com/PopeKael/PhasaForge/blob/release/1.0.0/docs/INSTALLATION.md)
+- [Current acceptance record](https://github.com/PopeKael/PhasaForge/blob/release/1.0.0/docs/ACCEPTANCE_TESTS.md)
+- [Changelog](CHANGELOG.md)
+- [Product specification](docs/PRODUCT_SPEC.md) and [architecture](docs/ARCHITECTURE.md)
+- [Build and release guide](docs/BUILD_AND_RELEASE.md)
+- [Support and safe bug reports](SUPPORT.md)
+
+## Development
+
+On Windows, with Node.js, Rust/MSVC and the required Tauri build tools installed:
 
 ```powershell
 npm ci
-npm run build
-npm run test:ui
-cargo test --manifest-path src-tauri/Cargo.toml --lib
-npm run tauri build -- --no-bundle
+npm run tauri dev
 ```
 
-The signed NSIS/MSI release build requires the private Tauri signing key outside the repository; see the release guide. Never commit API keys, signing keys, recordings, model weights, or private user text.
+Production builds and signing require additional steps described in the [release guide](docs/BUILD_AND_RELEASE.md). Do not commit credentials, signing keys, recordings, private text, or model weights.
 
-## Licensing and data
+## Privacy and licensing
 
-PhasaForge source code is MIT licensed; see [LICENSE](LICENSE). The bundled learner dictionary contains separately licensed material: ThaiReader/Wiktionary-derived data is CC BY-SA 4.0 with attribution notices in `reference-data/`. The optional Meta MMS-TTS model is CC BY-NC 4.0 and is not bundled. The optional Thai Zipformer recognition model is Apache-2.0 and is not bundled. These third-party licenses do not change the application's source-code license. See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) and [DEPENDENCIES.md](docs/DEPENDENCIES.md) for details.
+Dictionary lookup and stored examples work locally. If you request translation through Azure, the relevant Thai text is sent to Microsoft. Local Ollama runs through your configured local service. Settings, history, and recordings are stored in the Windows user's application data.
 
-## Support
-
-For a bug report, include the PhasaForge version, Windows version, selected voice/provider, steps to reproduce, and a short error message. Do not post API keys, private text, recordings, or logs containing personal content. See [SUPPORT.md](SUPPORT.md).
+The **application source is MIT licensed** ([LICENSE](LICENSE)); bundled dictionary data and optional speech models have separate licenses. See the [third-party notices](https://github.com/PopeKael/PhasaForge/blob/release/1.0.0/THIRD-PARTY-NOTICES.md). In particular, the optional Meta MMS-TTS model is **CC BY-NC 4.0** and is not bundled.
