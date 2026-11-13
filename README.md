@@ -58,7 +58,7 @@ The **application source is MIT licensed** ([LICENSE](LICENSE)); bundled diction
 
 ## Help and community
 
-PhasaForge is part of [Garage Alchemy](https://garage.dia.net.au/), where Wazza shares practical tools and experiments. For bugs or suggestions while the PhasaForge issue tracker is not public, use [Wazza Garage issues](https://github.com/PopeKael/wazza-garage/issues) and start the title with `PhasaForge:`. See [SUPPORT.md](SUPPORT.md) for what to include. Never post private Thai text, recordings or credentials.
+PhasaForge is part of [Garage Alchemy](https://garage.dia.net.au/), where Wazza shares practical tools and experiments. To report a bug or suggest an improvement, open a [PhasaForge issue](https://github.com/PopeKael/PhasaForge/issues). Check existing issues first and see [SUPPORT.md](SUPPORT.md) for what to include. Never post private Thai text, recordings or credentials.
 
 ### Support the workshop ☕
 
