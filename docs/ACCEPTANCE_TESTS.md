@@ -1,5 +1,29 @@
 # Acceptance record
 
+## Version 1.0.0 — deployment acceptance
+
+| Check | Result | Evidence and limit |
+|---|---|---|
+| Installed version | Passed | The current-user installed app opened from `%LOCALAPPDATA%\PhasaForge\PhasaForge.exe`; its UI displayed `v1.0.0`, and Windows file metadata reported product/file version `1.0.0`. |
+| Standalone release executable | Passed | Rebuilt with `npm run tauri build -- --no-bundle` after producing the installers, then launched the staged `release-artifacts/1.0.0/PhasaForge.exe` directly. Its log reported `app.start version=1.0.0`; MMS preparation recorded `load_ms=6416 warmup_ms=352 local_only=true`. |
+| Background MMS preparation | Passed on this installed profile; startup varied | The installed executable logged `mms.prepare load_ms=17876 warmup_ms=369 local_only=true` on the latest launch. An earlier 1.0.0 launch logged 6,344 ms and 325 ms. The window opened while preparation ran; Settings reported Ready afterwards. Both runs used the existing local Python environment and cached model, and automatic preparation made no network request. |
+| Ready-path short-word playback | Passed | A live Play action on `น้ำ` logged `mms.click_to_playing_ms=203`; another initial playback logged 477 ms. These are WebView audio `playing` events after decode/start, not electrical loopback measurements. Both are below 2 seconds. |
+| Azure successful translation | Passed with the current Windows account's existing credential | The key was already stored in this Windows account's Credential Manager and was not read, displayed, replaced, or copied. Saved `southeastasia` as the resource region to replace the old hardcoded default; five real reference requests returned output in 197–588 ms (285 ms average) and matched the bundled English references. This did not test a newly supplied key. |
+| Azure credential isolation and bad-key handling | Partially verified; clean-profile test pending | After the NSIS uninstall/reinstall, the installed app's Settings again reported the key saved and showed the saved resource region. Credential values were not revealed or copied. Source and UI tests confirm the key is looked up only for the current Windows account and missing-key guidance names that account; source review confirms HTTP 401/403 returns a clear key-or-region error. A second clean Windows account and live invalid-key request were not tested because no temporary account was available in this session. |
+| NSIS install, uninstall, reinstall, and data retention | Passed on this account | The 1.0.0 NSIS package installed silently and reported ProductVersion/FileVersion `1.0.0`. After uninstall, the executable was removed, only PhasaForge's `HKCU\...\Run` and `StartupApproved\Run` values were removed, and app-data manifests for database, recordings, MMS/model cache, and other app data matched pre-uninstall sizes and SHA-256 aggregates exactly. Reinstall succeeded; the installed executable launched from `%LOCALAPPDATA%\PhasaForge\PhasaForge.exe`. |
+| MSI install and uninstall | Package built; live test pending | The signed MSI artifact was generated and checksum-verified. Installation requires an elevated Windows session; this session could not install it, so MSI uninstall cleanup and data retention remain unverified. |
+| Sign-in startup | Registry state verified; real sign-in pending | Autostart was enabled before the uninstall test. Its exact current-user `Run` and `StartupApproved\\Run` values were removed by NSIS uninstall and restored for the reinstalled executable. A real sign-out/sign-in cycle was not performed. |
+| Regression tests and artifacts | Passed with workspace caveat | Rust: 20/20. Tracked frontend tests: 30/30 plus the checked-in Edge browser test rerun alone: 1/1. TypeScript/Vite production build passed; `npm audit --omit=dev` found 0 vulnerabilities; release artifact SHA-256 values match the manifest. This workspace also contains four unrelated untracked `(1)` files; the two test copies enter the normal `tests/*.test.mjs` wildcard and fail independently of tracked project tests. All four files were preserved and excluded from the release commit. |
+
+### 1.0.0 known limitations
+
+- The app package does not include Python, PyTorch, Transformers, NumPy, MMS weights, or the optional recognition runtime/model. A clean system needs the documented prerequisites before local MMS or ASR can work.
+- MMS isolated-word onset and prosody remain weaker than sentence-context speech. The accepted 0.6.5 WAV inspection found no hard end-boundary truncation; listening review remains useful.
+- ThaiReader/Wiktionary-derived dictionary coverage and senses are incomplete. Unsupported syllable boundaries keep a conservative fallback.
+- Version 1.0.0 contains signed-updater configuration only. It does not check or install updates, and the 1.0.0 → 1.0.1 cycle is still pending.
+- Azure tests above used the developer's existing Windows-account credential; they do not constitute clean-profile acceptance.
+- Python/Torch/MMS clean-machine initialization is unverified. The installed test confirms only the already-prepared development profile; loading took 6.3–17.9 seconds in the measured launches, with 0.3–0.4 seconds for first-inference warm-up.
+
 ## Version 0.6.5 development — final accuracy corrections
 
 | Check | Result | Evidence |

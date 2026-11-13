@@ -1,5 +1,14 @@
 # Changelog
 
+# 1.0.0 — first deployment-testing release
+
+- Promote the accepted 0.6.5 segmentation, combining-mark, tone parsing, history refresh, and MMS playback corrections.
+- Keep selected cached MMS preparation asynchronous and local-only; the application never downloads a voice model during automatic warm-up.
+- Let each Windows account save its own Azure Translator key and resource region in Windows Credential Manager. No developer key is bundled, and no region is hardcoded.
+- Remove PhasaForge's current-user startup registration during NSIS or MSI uninstall without removing other applications' startup entries.
+- Add the Tauri signed-update configuration foundation. Version 1.0.0 does not automatically check for or install updates; the signed 1.0.0 → 1.0.1 cycle remains a deployment test.
+- Document standalone prerequisites, Azure first-run setup, installer checks, and known speech-quality/dictionary limits.
+
 # 0.6.5 — Thai segmentation, tone parsing and MMS audio accuracy
 
 - Normalize Thai Unicode before sentence and word segmentation, and keep unknown-word fallback on Thai Character Cluster boundaries.

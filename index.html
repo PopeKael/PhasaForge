@@ -15,7 +15,7 @@
           <span>Launch hotkey:</span><kbd id="shortcut-label">Right Ctrl + ↑</kbd>
           <span class="titlebar-separator">|</span>
           <span class="titlebar-hint">Opens near your selection and stays on-screen</span>
-          <span class="version">v0.6.5</span>
+          <span class="version">v1.0.0</span>
         </div>
         <div class="window-actions">
           <button id="settings-toggle" class="icon-button" title="Settings" aria-label="Settings">⚙</button>
@@ -114,11 +114,14 @@
             <p>The Ollama model you selected is for text translation. It does not prepare or run speech recognition.</p>
           </section>
           <h3>Thai text and translation</h3>
-          <p class="setup-instruction">Azure F0 is the normal translator for this app. The saved key is checked automatically. Leave this section as it is unless you want to change translation providers.</p>
-          <label class="setting-row"><span class="setting-label">Translation provider <button class="help-tip" type="button" title="Azure F0 is the normal provider and is already configured on this PC. Choose Local Ollama only if you want to run translation on this PC instead." aria-label="Translation provider help">?</button></span><select id="translation-provider"><option value="azure">Azure Translator F0 · automatic · free tier</option><option value="ollama">Local Ollama · optional</option><option value="offline">Offline examples only</option></select></label>
+          <p class="setup-instruction">Choose how new Thai sentences are translated. Azure uses your own Translator resource and sends text to Microsoft. Offline uses no network and only provides bundled examples. Local Ollama needs Ollama running with a model installed on this PC.</p>
+          <label class="setting-row"><span class="setting-label">Translation provider <button class="help-tip" type="button" title="Azure needs your own key and resource region. Offline examples make no network requests. Local Ollama sends requests only to the Ollama service on this PC." aria-label="Translation provider help">?</button></span><select id="translation-provider"><option value="azure">Azure Translator · your own resource</option><option value="ollama">Local Ollama · optional</option><option value="offline">Offline examples only</option></select></label>
           <div id="azure-provider-controls">
             <button id="replace-azure-key" class="secondary-button small" hidden>Replace saved Azure key</button>
-            <div id="azure-key-editor" hidden><label class="setting-row"><span class="setting-label">Azure F0 key <button class="help-tip" type="button" title="Only enter a key if the status says no key is saved, or if you are replacing it. It is stored securely in Windows Credential Manager." aria-label="Azure key help">?</button></span><input id="azure-key" type="password" autocomplete="new-password" placeholder="Only needed if no saved key is detected" /></label><button id="save-azure-key" class="secondary-button small">Save F0 key securely</button></div>
+            <div id="azure-key-editor" hidden><label class="setting-row"><span class="setting-label">Azure Translator key <button class="help-tip" type="button" title="Enter a key from your own Azure Translator resource. It is stored in Windows Credential Manager for this Windows account and never in app settings, logs, or the dictionary." aria-label="Azure key help">?</button></span><input id="azure-key" type="password" autocomplete="new-password" placeholder="Your Azure Translator resource key" /></label></div>
+            <label class="setting-row"><span class="setting-label">Azure resource region <button class="help-tip" type="button" title="Use the region shown on your resource's Keys and Endpoint page. Leave blank only for a global Translator resource." aria-label="Azure region help">?</button></span><input id="azure-region" type="text" autocomplete="off" placeholder="Resource region, e.g. australiaeast" /></label>
+            <p class="setup-instruction">For regional or multi-service resources, enter the resource region exactly as shown in Azure. A global Translator resource may leave it blank. The region is stored with the key in this Windows account's Credential Manager.</p>
+            <button id="save-azure-key" class="secondary-button small">Save Azure settings</button>
             <button id="test-azure-translation" class="secondary-button small">Test 5 translations</button>
           </div>
           <p id="ollama-discovery-status" class="muted setup-instruction" role="status">Checking this PC for Ollama and installed models…</p>
@@ -129,7 +132,7 @@
             <label class="setting-row"><span class="setting-label">Model name to download <button class="help-tip" type="button" title="Type the Ollama model tag you want. Nothing is preselected or downloaded for you; downloads may be several GB." aria-label="Model download help">?</button></span><input id="model-download-name" type="text" placeholder="Type a model tag, e.g. qwen3.5:4b" /></label>
             <div class="setting-actions"><button id="refresh-models" class="secondary-button small">Check local Ollama</button><button id="pull-model" class="secondary-button small">Download model</button><button id="test-local-translation" class="secondary-button small">Test 5 references</button></div>
           </div>
-          <p id="provider-status" class="muted" role="status">Azure F0 translates automatically using the free monthly quota and a 1.9M character safety cap. Its key stays in Windows Credential Manager. Ollama can be selected as an optional local fallback when Azure is unavailable.</p>
+          <p id="provider-status" class="muted" role="status">Azure translation is sent to Microsoft using the key saved for this Windows account. The local Ollama option talks to the Ollama service on this PC. Offline examples make no network requests.</p>
           <div id="translation-test-results" class="translation-test-results" aria-live="polite"></div>
           <div class="setting-actions"><button id="test-offline" class="secondary-button small">Test offline Thai engine</button><span id="engine-test-status" class="muted" role="status"></span></div>
           <h3>Local knowledge base</h3>

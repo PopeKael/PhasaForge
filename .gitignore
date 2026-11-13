@@ -9,7 +9,12 @@ src-tauri/gen/
 *.log
 *.local
 *.key
+*.pem
+*.p12
+*.pfx
 *.sig
+*.dpapi
+.tauri/
 .env
 .env.*
 release-artifacts/

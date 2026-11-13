@@ -1,6 +1,7 @@
 """Offline Thai speech synthesis using Facebook MMS VITS (CC BY-NC 4.0).
 
-First use downloads the public model from Hugging Face into the local HF cache.
+The explicit Download + test action may install the public model from Hugging Face.
+Automatic startup preparation requires the model to be cached and never downloads.
 This script intentionally emits only synthesized audio and never uploads text.
 """
 from __future__ import annotations

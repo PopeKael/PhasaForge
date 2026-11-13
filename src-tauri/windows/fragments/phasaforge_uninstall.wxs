@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <ComponentGroup Id="PhasaForgeUninstallCleanup">
+      <Component Id="PhasaForgeUninstallCleanupMarker" Directory="TARGETDIR" Guid="*">
+        <RegistryKey Root="HKCU" Key="Software\PhasaForge\InstallerCleanup">
+          <RegistryValue Name="Marker" Type="integer" Value="1" KeyPath="yes" />
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <CustomAction
+      Id="RemovePhasaForgeRunEntry"
+      Directory="TARGETDIR"
+      ExeCommand='&quot;[System64Folder]reg.exe&quot; delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "PhasaForge" /f'
+      Execute="deferred"
+      Impersonate="yes"
+      Return="ignore" />
+    <CustomAction
+      Id="RemovePhasaForgeStartupApprovedEntry"
+      Directory="TARGETDIR"
+      ExeCommand='&quot;[System64Folder]reg.exe&quot; delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" /v "PhasaForge" /f'
+      Execute="deferred"
+      Impersonate="yes"
+      Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="RemovePhasaForgeRunEntry" Before="InstallFinalize">REMOVE="ALL"</Custom>
+      <Custom Action="RemovePhasaForgeStartupApprovedEntry" Before="InstallFinalize">REMOVE="ALL"</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

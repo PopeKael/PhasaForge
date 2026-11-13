@@ -2,7 +2,7 @@
 
 ## 0.2.0 teaching scope
 
-PhasaForge is a free, standalone Windows Thai-learning popup. Its 640×480 window keeps the captured source text, current sentence, playback controls, and Meaning / Words / Practice views in one place. The media library at `D:\Music\Thai Language` is reference-only.
+PhasaForge is a free, standalone Windows Thai-learning popup. Its 640×480 window keeps the captured source text, current sentence, playback controls, and Meaning / Words / Practice views in one place. User media libraries are reference-only and are not imported into the application.
 
 ### Teaching flow
 

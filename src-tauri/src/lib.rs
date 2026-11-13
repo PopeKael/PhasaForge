@@ -81,11 +81,12 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_autostart::Builder::new().app_name("PhasaForge").build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             app.manage(language::open(app.handle()).map_err(std::io::Error::other)?);
             app.manage(practice_history::open(app.handle()).map_err(std::io::Error::other)?);
             let log_path = diagnostics::app_log_path(app.handle());
-            diagnostics::log(log_path.as_deref(), "app.start version=0.6.5");
+            diagnostics::log(log_path.as_deref(), &format!("app.start version={}", env!("CARGO_PKG_VERSION")));
             let test_mode = std::env::var_os("PHASAFORGE_TEST_MODE").is_some();
             if !test_mode {
                 if let Err(error) = hotkey::start(app.handle().clone()) {
@@ -126,7 +127,7 @@ pub fn run() {
             practice_history::list_practice_history, practice_history::save_practice_recording, practice_history::update_practice_recording, practice_history::practice_recording_audio, practice_history::clear_practice_history,
             language::analyze_text, language::save_correction, language::database_location, language::refresh_dictionary,
             language::ollama_models, language::discover_ollama, language::pull_ollama_model, language::load_ollama_model, language::translate_local, language::test_local_translation,
-            language::save_translator_key, language::translator_key_status, language::translate_azure,
+            language::save_translator_key, language::translator_key_status, language::translator_region, language::translate_azure,
             language::translate_auto, language::translate_ollama_auto, language::test_azure_translation])
         .build(tauri::generate_context!())
         .expect("PhasaForge failed to start");

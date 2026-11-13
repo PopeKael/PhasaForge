@@ -590,25 +590,28 @@ mod credential_store {
     unsafe extern "system" {
         fn CredWriteW(credential: *const CredentialW, flags: Dword) -> Bool;
         fn CredReadW(target: *const u16, kind: Dword, flags: Dword, out: *mut *mut CredentialW) -> Bool;
+        fn CredDeleteW(target: *const u16, kind: Dword, flags: Dword) -> Bool;
         fn CredFree(buffer: *mut c_void);
     }
     const TARGET: &str = "PhasaForge/AzureTranslator/F0";
+    const REGION_TARGET: &str = "PhasaForge/AzureTranslator/Region";
     const GENERIC: Dword = 1;
     const LOCAL_MACHINE: Dword = 2;
 
-    pub fn write(secret: &str) -> Result<(), String> {
-        if secret.trim().is_empty() || secret.len() > 1024 { return Err("Enter a valid Translator key.".into()); }
-        let mut target: Vec<u16> = TARGET.encode_utf16().chain(Some(0)).collect();
+    fn write_target(target_name: &str, value: &str, maximum_bytes: usize) -> Result<(), String> {
+        if value.is_empty() || value.len() > maximum_bytes { return Err("The Azure credential value is invalid.".into()); }
+        let mut target: Vec<u16> = target_name.encode_utf16().chain(Some(0)).collect();
         let mut username: Vec<u16> = "phasaforge-thai-translator".encode_utf16().chain(Some(0)).collect();
-        let mut blob = secret.trim().as_bytes().to_vec();
+        let mut blob = value.as_bytes().to_vec();
         let credential = CredentialW { flags: 0, kind: GENERIC, target_name: target.as_mut_ptr(), comment: std::ptr::null_mut(), last_written: FileTime { low: 0, high: 0 }, blob_size: blob.len() as Dword, blob: blob.as_mut_ptr(), persist: LOCAL_MACHINE, attribute_count: 0, attributes: std::ptr::null_mut(), target_alias: std::ptr::null_mut(), username: username.as_mut_ptr() };
         let ok = unsafe { CredWriteW(&credential, 0) };
         blob.fill(0);
-        if ok == 0 { return Err(format!("Windows Credential Manager could not save the Translator key ({}).", std::io::Error::last_os_error())); }
+        if ok == 0 { return Err(format!("Windows Credential Manager could not save Azure settings ({}).", std::io::Error::last_os_error())); }
         Ok(())
     }
-    pub fn read() -> Result<Option<String>, String> {
-        let target: Vec<u16> = TARGET.encode_utf16().chain(Some(0)).collect();
+
+    fn read_target(target_name: &str) -> Result<Option<String>, String> {
+        let target: Vec<u16> = target_name.encode_utf16().chain(Some(0)).collect();
         let mut ptr: *mut CredentialW = std::ptr::null_mut();
         if unsafe { CredReadW(target.as_ptr(), GENERIC, 0, &mut ptr) } == 0 { return Ok(None); }
         if ptr.is_null() { return Ok(None); }
@@ -617,36 +620,83 @@ mod credential_store {
         unsafe { CredFree(ptr.cast()); }
         secret.map(Some)
     }
+
+    pub fn write(secret: &str) -> Result<(), String> { write_target(TARGET, secret.trim(), 1024) }
+    pub fn read() -> Result<Option<String>, String> { read_target(TARGET) }
+    pub fn write_region(region: &str) -> Result<(), String> {
+        let value = region.trim();
+        if value.is_empty() {
+            let target: Vec<u16> = REGION_TARGET.encode_utf16().chain(Some(0)).collect();
+            let deleted = unsafe { CredDeleteW(target.as_ptr(), GENERIC, 0) };
+            if deleted == 0 {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() != Some(1168) { return Err(format!("Windows Credential Manager could not clear the Azure region ({}).", error)); }
+            }
+            return Ok(());
+        }
+        write_target(REGION_TARGET, value, 128)
+    }
+    pub fn read_region() -> Result<String, String> { Ok(read_target(REGION_TARGET)?.unwrap_or_default()) }
 }
 
 #[cfg(not(target_os = "windows"))]
 mod credential_store {
     pub fn write(_: &str) -> Result<(), String> { Err("Secure Translator credentials are supported only on Windows.".into()) }
     pub fn read() -> Result<Option<String>, String> { Ok(None) }
+    pub fn write_region(_: &str) -> Result<(), String> { Err("Secure Translator credentials are supported only on Windows.".into()) }
+    pub fn read_region() -> Result<String, String> { Ok(String::new()) }
+}
+
+fn validate_translator_region(region: &str) -> Result<String, String> {
+    let value = region.trim();
+    if value.len() > 128 || !value.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.')) {
+        return Err("Enter the Azure resource region using letters, digits, dots, or hyphens. Leave it blank only for a global Translator resource.".into());
+    }
+    Ok(value.to_string())
 }
 
 #[tauri::command]
-pub fn save_translator_key(mut key: String) -> Result<(), String> {
+pub fn save_translator_key(mut key: String, mut region: String) -> Result<(), String> {
     use zeroize::Zeroize;
-    let result = credential_store::write(&key);
+    let result: Result<(), String> = (|| {
+        let normalized_region = validate_translator_region(&region)?;
+        if key.trim().is_empty() {
+            if credential_store::read()?.is_none() { return Err("Enter your Azure Translator key before saving the region.".into()); }
+        } else {
+            credential_store::write(&key)?;
+        }
+        credential_store::write_region(&normalized_region)
+    })();
     key.zeroize();
+    region.zeroize();
     result
 }
 
 #[tauri::command]
 pub fn translator_key_status() -> Result<bool, String> { Ok(credential_store::read()?.is_some()) }
 
+#[tauri::command]
+pub fn translator_region() -> Result<String, String> { credential_store::read_region() }
+
 #[derive(Serialize)]
 pub struct TranslationResult { pub english: String, pub provider: String, pub latency_ms: u128, pub cached: bool }
 
-async fn translate_azure_uncached(text: &str, key: &str) -> Result<String, String> {
-    let response = Client::builder().timeout(Duration::from_secs(10)).build().map_err(|e| e.to_string())?
+async fn translate_azure_uncached(text: &str, key: &str, region: &str) -> Result<String, String> {
+    let client = Client::builder().timeout(Duration::from_secs(10)).build().map_err(|e| e.to_string())?;
+    let mut request = client
         .post("https://api.cognitive.microsofttranslator.com/translate?api-version=3.0&from=th&to=en")
         .header("Ocp-Apim-Subscription-Key", key)
-        .header("Ocp-Apim-Subscription-Region", "southeastasia")
-        .header("Content-Type", "application/json; charset=UTF-8")
-        .json(&serde_json::json!([{"text":text}])).send().await.map_err(|e| format!("Azure Translator request failed: {e}"))?;
-    if !response.status().is_success() { return Err(format!("Azure Translator returned HTTP {}. Check the F0 key and region in Settings.", response.status())); }
+        .header("Content-Type", "application/json; charset=UTF-8");
+    if !region.trim().is_empty() { request = request.header("Ocp-Apim-Subscription-Region", region.trim()); }
+    let response = request.json(&serde_json::json!([{"text":text}])).send().await.map_err(|e| format!("Azure Translator request failed: {e}"))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        return Err(if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            format!("Azure Translator rejected the saved key or resource region (HTTP {status}). Check both values in Settings.")
+        } else {
+            format!("Azure Translator returned HTTP {status}. Check the resource region, service status, and monthly quota in Settings.")
+        });
+    }
     let value: serde_json::Value = response.json().await.map_err(|e| format!("Azure Translator response was invalid: {e}"))?;
     value[0]["translations"][0]["text"].as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned).ok_or_else(|| "Azure Translator returned no English text.".into())
 }
@@ -660,7 +710,8 @@ pub async fn translate_azure(text: String, state: State<'_, LanguageState>) -> R
     let _guard = state.translation_lock.lock().await;
     let cached: Option<(String, String)> = state.db.lock().map_err(|_| "The local dictionary is busy".to_string())?.query_row("SELECT english,provider FROM translation_cache WHERE thai=?1", [text], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(|e| e.to_string())?;
     if let Some((english, provider)) = cached { return Ok(TranslationResult { english, provider, latency_ms: 0, cached: true }); }
-    let key = zeroize::Zeroizing::new(credential_store::read()?.ok_or_else(|| "Translator key is not configured. Open Settings and save the F0 key.".to_string())?);
+    let key = zeroize::Zeroizing::new(credential_store::read()?.ok_or_else(|| "Translator key is not configured for this Windows account. Open Settings and enter your own Azure key or choose Offline or Local Ollama.".to_string())?);
+    let region = zeroize::Zeroizing::new(credential_store::read_region()?);
     let length = azure_character_count(text);
     {
         let db = state.db.lock().map_err(|_| "The local dictionary is busy".to_string())?;
@@ -670,7 +721,7 @@ pub async fn translate_azure(text: String, state: State<'_, LanguageState>) -> R
         db.execute("INSERT INTO translator_usage(month,characters) VALUES(strftime('%Y-%m','now'),?1) ON CONFLICT(month) DO UPDATE SET characters=characters+excluded.characters", [length]).map_err(|e| e.to_string())?;
     }
     let start = std::time::Instant::now();
-    let english = translate_azure_uncached(text, key.as_str()).await?;
+    let english = translate_azure_uncached(text, key.as_str(), region.as_str()).await?;
     let elapsed = start.elapsed().as_millis();
     let db = state.db.lock().map_err(|_| "The local dictionary is busy".to_string())?;
     db.execute("INSERT OR REPLACE INTO translation_cache(thai,english,provider) VALUES(?1,?2,'Azure Translator F0')", params![text, english]).map_err(|e| e.to_string())?;
@@ -1006,6 +1057,15 @@ mod tests {
     fn azure_character_accounting_uses_utf16_units() {
         assert_eq!(azure_character_count("ไทย"), 3);
         assert_eq!(azure_character_count("A😀"), 3);
+    }
+
+    #[test]
+    fn azure_resource_region_accepts_user_regions_and_global_blank() {
+        assert_eq!(validate_translator_region(" australiaeast ").unwrap(), "australiaeast");
+        assert_eq!(validate_translator_region("westus2").unwrap(), "westus2");
+        assert_eq!(validate_translator_region("").unwrap(), "");
+        assert!(validate_translator_region("north europe").is_err());
+        assert!(validate_translator_region("region\r\nX-Injected: yes").is_err());
     }
     #[test]
     fn paiboon_tone_marks_support_precomposed_and_decomposed_unicode() {

@@ -1,4 +1,16 @@
-# Dependencies and reuse review — 0.3.0
+# Dependencies, licenses and reuse
+
+## 1.0.0 deployment dependency check
+
+| External runtime/data | Bundled? | Requirement and deployment behavior |
+|---|---|---|
+| Python 3.10+ | No | The MMS helper starts the Python executable found on `PATH`, or the path in `PHASAFORGE_PYTHON`. MMS initialization depends on a compatible external Python environment. |
+| PyTorch (`torch`), Transformers, NumPy | No | Required by the MMS worker. The validation machine had Python 3.12.0, `torch 2.12.0+rocm7.14.0`, `transformers 5.12.1`, and `numpy 2.4.6`; the app forces CPU inference. A clean Windows install must supply compatible packages before MMS can initialize. |
+| `facebook/mms-tts-tha` model weights | No | Stored in PhasaForge's Hugging Face cache. Automatic background preparation uses local files only. Download occurs only through the explicit **Download + test local Thai voice** action. The model is CC BY-NC 4.0; commercial use is not permitted under that license. |
+| Microsoft Edge WebView2 Runtime | No | Tauri's Windows desktop webview prerequisite. It must be present on the target Windows machine. |
+| `@tauri-apps/plugin-updater` 2.14.1 and `tauri-plugin-updater` 2.x | Package dependency | Registers Tauri's updater API and signed-artifact validation. Version 1.0.0 makes no update request and does not install updates. See `docs/UPDATES.md`. |
+
+The installer is not self-contained for MMS. The installed-executable warm-up test on this development machine proves that its existing Python packages and cached model initialize; it does not prove a clean machine can synthesize until Python, packages, and the model are installed.
 
 | Component | Use | Notes |
 |---|---|---|
@@ -18,4 +30,4 @@
 - **Translation:** Azure F0 is the established primary hosted provider and its key is held in Windows Credential Manager. Practice follows the persisted provider choice; Local Ollama retains the existing Azure fallback behavior, and Offline examples do not translate new spoken sentences. Ollama discovery reads the local API and model manifests only; it does not restart, load, or reconfigure the shared service. Manual model selection/loading and explicit model downloads remain in Settings. Previously compared Ollama models included `qwen3.5:4b`, `qwen3.5:9b-q4_K_M`, and `qwen3.8-27b-ud-iq3-xxs:ctx32k`; results are recorded separately in the benchmark. No model is downloaded automatically.
 - **Thai TTS:** The application currently prefers an installed Windows Thai voice, then a Thai WebView voice; MMS is the final automatic fallback and can be explicitly selected. Local `facebook/mms-tts-tha` uses Transformers/PyTorch on CPU and downloads model weights to app data on first use. This checkpoint is CC BY-NC 4.0; it is unsuitable for commercial use under that license. The Windows GPU path crashed in the local ROCm runtime during validation, so PhasaForge uses CPU inference for MMS.
 - **ASR:** Whisper.cpp was initially proposed; sherpa-onnx was subsequently implemented and remains the selected backend. Version 0.3.6+ optionally installs the [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 2.0.1 Python CPU runtime and NumPy 1.26.4 into an app-data virtual environment and downloads only the int8 encoder plus the Thai Zipformer model files needed for transcription. The [Thai model](https://huggingface.co/yfyeung/icefall-asr-gigaspeech2-th-zipformer-2024-06-20) is Apache-2.0 and is not bundled. The official sherpa catalogue currently exposes this Thai model as an offline transducer, so it transcribes after Stop rather than producing live interim words. Runtime and model sizes, cold-start latency and CPU/RAM use still require measurement on the user's PC. The Windows `SpeechRecognizer` route remains unused because Microsoft requires MSIX package identity for those APIs while the app ships an unpackaged NSIS installer; see [Microsoft's speech-recognition guidance](https://learn.microsoft.com/en-us/windows/apps/develop/input/speech-recognition).
-- **Reference media:** `D:\Music\Thai Language` was inventoried only. No course files, video/audio samples, subtitles, transcripts or compressed packs were imported or redistributed.
+- **Reference media:** User-provided course files, audio, video, subtitles, transcripts, and archives are not imported or redistributed by this project.

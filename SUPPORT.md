@@ -1,17 +1,12 @@
 # Support
 
-PhasaForge is free to use. No payment, subscription, cloud account, or login is required.
+For a published build, report issues in the PhasaForge GitHub issue tracker when it is enabled. During private testing, use the contact channel provided with the test build.
 
-Until PhasaForge has its own public issue tracker, use [Wazza Garage issues](https://github.com/PopeKael/wazza-garage/issues) for bug reports and feature suggestions. Prefix the issue title with `PhasaForge:`.
+Include:
 
-Please include:
-
-- PhasaForge version.
-- Relevant Windows version and Thai speech voice/backend.
-- Steps to reproduce.
-- Expected and observed behaviour.
+- PhasaForge version and Windows version.
+- Selected translation provider and Thai voice/backend.
+- Steps to reproduce and expected versus observed behavior.
 - A short error message or screenshot when useful.
 
-Do not post passwords, API credentials, private text, recordings, or other sensitive information.
-
-Community: [garage.dia.net.au](https://garage.dia.net.au/). Optional support: [Buy Me a Coffee](https://buymeacoffee.com/warrengerdes) or [Patreon](https://www.patreon.com/c/chanyawazza).
+Do not attach API keys, passwords, Credential Manager exports, private text, recordings, model caches, or unredacted diagnostic logs.

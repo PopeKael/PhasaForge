@@ -1,34 +1,41 @@
 # Build and release
 
-## Local Windows build
+## Windows build
 
-Prerequisites: Windows 11 x64, stable Rust MSVC toolchain, Node.js/npm, Microsoft C++ Build Tools, and WebView2.
+Build on Windows 10 or 11 x64 with the Rust MSVC toolchain, Node.js/npm, Microsoft C++ Build Tools, and WebView2 available.
 
 ```powershell
 npm ci
+npm run build
 npm run test:ui
-cargo test --lib --manifest-path src-tauri/Cargo.toml
+cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
 npm run tauri build -- --no-bundle
 ```
 
-Use the Tauri CLI command above to produce the standalone executable. It runs `beforeBuildCommand` (`npm run build`) and embeds the configured `frontendDist` (`../dist`) in the app. `devUrl` (`http://127.0.0.1:5173`) is for `tauri dev`. A raw `cargo build --release` is not the delivery command: it bypasses Tauri CLI's production build hook and can leave the frontend build/embedding step unverified. Do not copy a raw Cargo output as a release test artifact.
+Use the Tauri CLI for the standalone executable. It runs the production frontend build and embeds `../dist`. A raw `cargo build --release` does not run that frontend step and is not a release artifact.
 
-`scripts/build_learner_db.py` verifies the retained ThaiReader SHA256 manifest and the pinned Kaikki JSONL checksum, then rebuilds `assets/learner.sqlite`. The bundled database is a share-alike data derivative; see source attribution and license files before changing or redistributing it. App code remains MIT.
+The learner database builder verifies the pinned source checksums before rebuilding `assets/learner.sqlite`. The learner data is separately licensed from the MIT application source; review the notices under `reference-data/` before changing or redistributing it.
 
-The 0.3.0 release files and hidden UI evidence are under `release-artifacts/0.3.0/`: `PhasaForge.exe`, `PhasaForge_0.3.0_x64-setup.exe`, checksum manifest, and UI screenshots. Local binaries are ignored by Git; the source and release instructions are committed. The installer is unsigned. The optional MMS model is downloaded separately and is not bundled.
+## Signed packages
 
-For routine development acceptance, run exactly `npm run tauri build -- --no-bundle`. Do not run raw `cargo build --release` as the delivery build: without Tauri CLI's `beforeBuildCommand` and production frontend embedding step, the executable can use the development URL (`http://127.0.0.1:5173`) and show `ERR_CONNECTION_REFUSED` when Vite is not running. Confirm that `src-tauri/tauri.conf.json` points `frontendDist` at `../dist`, then check the production assets after Tauri runs `npm run build`. Copy the newly built `src-tauri/target/release/phasaforge.exe` to a new versioned test-artifact directory, record its size and SHA-256, and launch that copy directly with no Vite server running. For the current checkpoint, use `release-artifacts/0.6.3-syllable-alignment-verified/PhasaForge.exe`. Do not install the app for routine testing. NSIS/MSI packaging is a separate check and does not replace delivery of the standalone executable. Selected-text history acceptance should verify that Previous/Next restores saved sentence cards without issuing `analyze_text`, `translate_auto`, or `translate_ollama_auto` again; only a new text entry or explicit Retry translation may request processing.
+Run `./scripts/build-signed-release.ps1` from the repository root to build the standalone executable, NSIS and MSI packages, and signed Tauri update bundles. The private updater key and DPAPI-protected passphrase must already exist under `%USERPROFILE%\.tauri\` on the release workstation. The script never prints either secret. Do not commit keys, passphrases, `.sig` files for private local test keys, or credential dumps.
 
-The Windows sign-in option uses the Tauri autostart plugin. It is per-user, defaults off, and registration is changed only when the saved checkbox differs from the current Windows setting. Launching or rebuilding the executable does not enable autostart by itself. An executable moved after opting in may require changing the checkbox again so Windows registers its new path.
+The installers do not bundle Python, PyTorch, Transformers, NumPy, or model weights. See [installation prerequisites](INSTALLATION.md) and [dependency inventory](DEPENDENCIES.md).
 
-## Installer smoke test
+## Installed acceptance
 
-The Windows CI workflow installs the current-user NSIS package silently, verifies its executable and uninstaller registration, uninstalls it silently, and checks cleanup. The acceptance record documents the 0.3.0 local install/uninstall verification.
+Test each release candidate from the executable or installer built for that exact commit. Verify the installed version, first launch, saved settings, Azure setup, cached dictionary and translations, recordings, optional model readiness, sign-in startup, uninstall cleanup, and data retention across reinstall. Keep results in [ACCEPTANCE_TESTS.md](ACCEPTANCE_TESTS.md); clearly distinguish source or unit-test evidence from live installation evidence.
+
+Use the signed local artifacts for listening and visual review. Create a SHA-256 manifest from the exact files offered to testers. Never publish a package that has not passed the acceptance checks claimed in its release notes.
 
 ## CI
 
-`.github/workflows/windows.yml` runs the TypeScript build and UI logic tests, Rust check/tests, builds Windows installers, and smoke-tests NSIS install/uninstall. It uploads build artifacts on main, pull requests and manual runs. Tagged `v*` builds attach unsigned installers to a private prerelease only after the repository has been created and GitHub authentication configured. The workflow never changes repository visibility.
+`.github/workflows/windows.yml` runs UI and Rust checks, builds Windows installers with the updater-artifact CI override, and smoke-tests the NSIS install/uninstall path. CI artifacts are uploaded only after every step passes. CI does not create a GitHub release, sign production packages, or change repository visibility.
 
-## Update status and signing
+## Autostart
 
-There is no active updater, signing key, or private update endpoint. Keep the repository private. Before enabling updater artifacts, generate a key outside Git, store the private key/password only as protected GitHub Actions secrets, configure the public key in the app, and provide a private-test endpoint. Private GitHub Releases do not provide an unauthenticated updater feed. Public release remains an explicit product decision.
+The Windows sign-in option uses the Tauri autostart plugin, is scoped to the current Windows account, and defaults off for new users. It registers the executable only when the saved checkbox differs from the current setting. Moving an executable after enabling autostart may require toggling the checkbox again so Windows records the new path. Both installer configurations target only the PhasaForge `Run` and `StartupApproved\Run` values during uninstall; do not replace this with deletion of the whole Windows startup registry key.
+
+## Updates
+
+Version 1.0.0 includes Tauri updater configuration and a signing foundation, but does not check for, download, or install updates. The private signing key stays outside Git. See [UPDATES.md](UPDATES.md) for the remaining requirements before a 1.0.0 → 1.0.1 test.

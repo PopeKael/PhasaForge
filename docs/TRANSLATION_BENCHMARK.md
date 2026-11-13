@@ -11,7 +11,7 @@ The local model responds faster after loading, but its tested Thai translation q
 
 ## Azure configuration and quota guard
 
-The application uses the official Text Translation v3 endpoint `https://api.cognitive.microsofttranslator.com` with `from=th`, `to=en`, `Ocp-Apim-Subscription-Key`, and `Ocp-Apim-Subscription-Region: southeastasia`. The key is stored in Windows Credential Manager. Successful results are cached in the local SQLite database. Character usage is reserved before each network call, including ambiguous failures, and counts UTF-16 units conservatively. Cached translations do not make another request.
+The historical benchmark above used the official Text Translation v3 endpoint `https://api.cognitive.microsofttranslator.com` with `from=th`, `to=en`, and the Southeast Asia region. Starting in 1.0.0, each user supplies the key and resource region; both are stored in Windows Credential Manager for that Windows account. The region header is omitted only when the user leaves it blank for a global Translator resource. Successful results are cached in the local SQLite database. Character usage is reserved before each network call, including ambiguous failures, and counts UTF-16 units conservatively. Cached translations do not make another request.
 
 Microsoft lists 2 million standard-translation characters per month in F0. PhasaForge stops sending uncached Azure requests at 1.9 million per UTC month. The resource remains on F0; PhasaForge does not change tiers or upgrade the subscription.
 

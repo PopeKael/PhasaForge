@@ -174,8 +174,8 @@ function updateAzureSetupStatus(configured: boolean): void {
   const provider = settings.translationProvider;
   const providerName = provider === "ollama" ? "Local Ollama" : provider === "offline" ? "Offline examples" : "Azure Translator F0";
   $("translation-setup-status").textContent = configured
-    ? `Azure F0 is already configured and its key is saved securely. ${provider === "azure" ? "Azure is selected; there is nothing to set up here." : `${providerName} is currently selected; choose Azure only if you want to switch back.`}`
-    : `No saved Azure key was found. Azure is the default hosted translator; enter a key only if you want to use it. ${provider === "azure" ? "Until then, new sentence translations will not be available." : `${providerName} is currently selected.`}`;
+    ? `An Azure key is saved in this Windows account's Credential Manager. Confirm the region for your resource. ${provider === "azure" ? "Azure is selected." : `${providerName} is currently selected; choose Azure only if you want to switch.`}`
+    : `No Azure key is saved for this Windows account. PhasaForge will not use another Windows account's credentials. ${provider === "azure" ? "Enter your own key and region, or choose Offline or Local Ollama." : `${providerName} is currently selected.`}`;
   reconcileInitialSetup();
 }
 
@@ -936,11 +936,13 @@ $("translate-current").addEventListener("click", async () => {
 });
 $("save-azure-key").addEventListener("click", async () => {
   const input = $<HTMLInputElement>("azure-key");
-  if (!input.value.trim()) { $("provider-status").textContent = "Paste a key from this resource's Keys and Endpoint page first."; return; }
+  const region = $<HTMLInputElement>("azure-region").value.trim();
+  if (!input.value.trim() && !azureKeyConfigured) { $("provider-status").textContent = "Enter your own Azure Translator key before saving the region."; return; }
   try {
-    await invoke("save_translator_key", { key: input.value });
+    await invoke("save_translator_key", { key: input.value, region });
     input.value = "";
-    $("provider-status").textContent = "F0 key saved in Windows Credential Manager. It is not stored in app settings or the database.";
+    $("azure-key-editor").hidden = true;
+    $("provider-status").textContent = "Azure settings saved in this Windows account's Credential Manager. The key is not stored in app settings, the dictionary, or logs.";
     updateAzureSetupStatus(true);
   } catch (error) { $("provider-status").textContent = `Could not securely save the key: ${String(error)}`; }
 });
@@ -1419,10 +1421,11 @@ if ("__TAURI_INTERNALS__" in window) {
     $("voice-setup-note").textContent = "Windows native Thai voice discovery failed: " + String(error) + ". Install a Thai text-to-speech voice in Windows Settings.";
   });
   void invoke<string>("database_location").then(path => { $<HTMLInputElement>("database-path").value = path; }).catch(error => { $<HTMLInputElement>("database-path").value = String(error); });
+  void invoke<string>("translator_region").then(region => { $<HTMLInputElement>("azure-region").value = region; }).catch(error => { $("provider-status").textContent = `Could not read the saved Azure resource region: ${String(error)}`; });
   void invoke<boolean>("translator_key_status").then(configured => {
     updateAzureSetupStatus(configured);
-    if (configured) $("provider-status").textContent = "Azure Translator F0 key is stored in Windows Credential Manager. Automatic translation is ready.";
-    else if (settings.translationProvider === "azure") $("provider-status").textContent = "No Azure F0 key is saved. Enter one in Setup only if you want to use Azure; offline word analysis remains ready.";
+    if (configured) $("provider-status").textContent = "Azure key is stored in this Windows account's Credential Manager. Automatic translation is ready when the saved region matches the resource.";
+    else if (settings.translationProvider === "azure") $("provider-status").textContent = "No Azure key is saved for this Windows account. Enter your own key, or choose Offline examples or Local Ollama. Offline word analysis remains ready.";
   }).catch(error => { $("translation-setup-status").textContent = `Could not check Azure key status: ${String(error)}`; $("provider-status").textContent = `Could not check secure Translator key status: ${String(error)}`; });
   void listen<{ text: string | null; rect: { x: number; y: number; width: number; height: number } | null; clipboard_restored: boolean | null; source: string; clipboard_status: string }>("selection-captured", async event => {
     const capture = event.payload;

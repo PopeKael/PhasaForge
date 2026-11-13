@@ -1,7 +1,7 @@
 {
   "name": "phasaforge",
   "private": true,
-  "version": "0.6.5",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.8.0",
-    "@tauri-apps/plugin-autostart": "^2.7.0"
+    "@tauri-apps/plugin-autostart": "^2.7.0",
+    "@tauri-apps/plugin-updater": "^2.14.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.8.0",
